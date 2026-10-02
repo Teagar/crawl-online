@@ -58,6 +58,11 @@ namespace CrawlOnline.Determinism
             return (T)InvokeStatic(type, method);
         }
 
+        public static object InvokeStaticWithArgument(string type, string method, object argument)
+        {
+            return AccessTools.Method(Type(type), method).Invoke(null, new[] { argument });
+        }
+
         public static T Property<T>(object instance, string property)
         {
             PropertyInfo info = AccessTools.Property(instance.GetType(), property);

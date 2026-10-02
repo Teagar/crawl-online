@@ -45,3 +45,8 @@ missing, extra, duplicate, or lifecycle-incompatible objects fail closed.
   exposed to runtime application code.
 - Unknown transitions fail closed rather than mutating local game objects with
   incomplete state.
+- A room mismatch resolves the host's canonical room key against the client's
+  generated map and invokes Crawl's own room-transition entry point once per
+  transition generation. Correction waits for that transition to complete.
+- Animation/gameplay-state mismatch does not block motion correction; direct
+  private-state mutation is intentionally avoided.

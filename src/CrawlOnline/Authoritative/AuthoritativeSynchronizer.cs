@@ -25,6 +25,8 @@ namespace CrawlOnline.Authoritative
         private string lastMismatchKey;
         private string lastRuntimeError;
         private uint nextEnemyId = 1;
+        private uint requestedTransitionGeneration;
+        private bool hasRequestedTransition;
 
         public AuthoritativeSynchronizer(SteamLobbySession lobbySession, ManualLogSource logSource)
         {
@@ -43,6 +45,7 @@ namespace CrawlOnline.Authoritative
                 hostEnemyIds.Clear();
                 clientEnemies.Clear();
                 nextEnemyId = 1;
+                hasRequestedTransition = false;
                 pendingSnapshot = null;
                 return;
             }
@@ -252,8 +255,17 @@ namespace CrawlOnline.Authoritative
                 int roomY = Quantize(roomPosition.y);
                 int roomDepth = GameApi.Property<int>(localRoom, "Depth");
                 if (roomX != snapshot.RoomX || roomY != snapshot.RoomY || roomDepth != snapshot.RoomDepth)
+                {
+                    if ((!hasRequestedTransition || SequenceWindow.IsNewer(snapshot.TransitionGeneration,
+                         requestedTransitionGeneration)) && TryBeginRoomTransition(snapshot))
+                    {
+                        requestedTransitionGeneration = snapshot.TransitionGeneration;
+                        hasRequestedTransition = true;
+                        return RejectMismatch("room-transition-started:" + snapshot.TransitionGeneration);
+                    }
                     return RejectMismatch("room:" + roomX + ":" + roomY + ":" + roomDepth + "->" +
                                           snapshot.RoomX + ":" + snapshot.RoomY + ":" + snapshot.RoomDepth);
+                }
             }
 
             object[] players;
@@ -270,8 +282,6 @@ namespace CrawlOnline.Authoritative
                     PlayerSnapshotFlags.Alive | PlayerSnapshotFlags.Bot | PlayerSnapshotFlags.Present;
                 if ((local.Flags & lifecycle) != (authoritative.Flags & lifecycle))
                     return RejectMismatch("player-lifecycle:" + authoritative.Slot);
-                if (local.State != authoritative.State)
-                    return RejectMismatch("player-state:" + authoritative.Slot + ":" + local.State + "->" + authoritative.State);
                 if (local.HealthMaximum != authoritative.HealthMaximum)
                     return RejectMismatch("player-max-health:" + authoritative.Slot);
             }
@@ -294,8 +304,7 @@ namespace CrawlOnline.Authoritative
                 }
                 if (!claimedEnemies.Add(enemy)) return RejectMismatch("enemy-duplicate:" + authoritative.Id);
                 EnemySnapshot local = CaptureEnemy(enemy, authoritative.Id);
-                if (local.Flags != authoritative.Flags || local.State != authoritative.State ||
-                    local.HealthMaximum != authoritative.HealthMaximum)
+                if (local.Flags != authoritative.Flags || local.HealthMaximum != authoritative.HealthMaximum)
                     return RejectMismatch("enemy-lifecycle:" + authoritative.Id);
                 resolvedEnemies[i] = enemy;
             }
@@ -350,6 +359,36 @@ namespace CrawlOnline.Authoritative
                 if (enemy != null && !playerObjects.Contains(enemy)) enemies.Add(enemy);
             }
             return enemies;
+        }
+
+        private static bool TryBeginRoomTransition(WorldSnapshot snapshot)
+        {
+            object generator = GameApi.StaticProperty("SystemLevel", "MapGenerator");
+            if (generator == null) return false;
+            object root = GameApi.Invoke(generator, "GetRootRoom");
+            var pending = new Queue<object>();
+            var seen = new HashSet<object>();
+            if (root != null) pending.Enqueue(root);
+            while (pending.Count > 0)
+            {
+                object room = pending.Dequeue();
+                if (room == null || !seen.Add(room)) continue;
+                Vector3 position = ((Component)room).transform.position;
+                if (Quantize(position.x) == snapshot.RoomX && Quantize(position.y) == snapshot.RoomY &&
+                    GameApi.Property<int>(room, "Depth") == snapshot.RoomDepth)
+                {
+                    GameApi.InvokeStaticWithArgument("SystemLevel", "OnTeleportToRoom", room);
+                    return true;
+                }
+                IEnumerable doors = GameApi.Field<IEnumerable>(room, "m_doors");
+                if (doors == null) continue;
+                foreach (object door in doors)
+                {
+                    object target = door == null ? null : GameApi.Field<object>(door, "m_room");
+                    if (target != null && !seen.Contains(target)) pending.Enqueue(target);
+                }
+            }
+            return false;
         }
 
         private static EnemySnapshot CaptureEnemy(GameObject gameObject, uint id)
