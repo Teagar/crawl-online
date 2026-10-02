@@ -12,6 +12,7 @@ namespace CrawlOnline
         private SteamLobbySession session;
         private DeterminismHarness harness;
         private AuthoritativeSynchronizer synchronizer;
+        private SessionHud hud;
 
         public CrawlOnlineRuntime(ManualLogSource logSource)
         {
@@ -19,11 +20,16 @@ namespace CrawlOnline
             session = new SteamLobbySession(log);
             synchronizer = new AuthoritativeSynchronizer(session, log);
             harness = DeterminismHarness.TryCreate(log);
+            hud = new SessionHud();
             log.LogInfo("Ready: F8 host, F7 invite, F9 leave");
         }
 
         public void Tick()
         {
+            if (Input.GetKeyDown(KeyCode.F6))
+            {
+                hud.ToggleMinimized();
+            }
             if (Input.GetKeyDown(KeyCode.F8))
             {
                 session.Host();
@@ -57,6 +63,7 @@ namespace CrawlOnline
                 harness.Dispose();
                 harness = null;
             }
+            hud = null;
         }
 
         public void FixedTick()
@@ -68,6 +75,11 @@ namespace CrawlOnline
         {
             if (harness != null) harness.LateTick();
             if (synchronizer != null) synchronizer.LateTick();
+        }
+
+        public void DrawHud()
+        {
+            if (hud != null && session != null) hud.Draw(session.GetHudState());
         }
     }
 }

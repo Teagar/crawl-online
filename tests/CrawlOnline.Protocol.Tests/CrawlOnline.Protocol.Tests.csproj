@@ -12,5 +12,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../../src/CrawlOnline/Protocol/*.cs" Link="Protocol/%(Filename)%(Extension)" />
+    <Compile Include="../../src/CrawlOnline/SessionHudState.cs" Link="SessionHudState.cs" />
   </ItemGroup>
 </Project>

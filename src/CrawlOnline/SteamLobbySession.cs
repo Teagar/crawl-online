@@ -37,6 +37,8 @@ namespace CrawlOnline
         private uint localInputSequence;
         private uint localInputEventSequence;
         private uint snapshotSequence;
+        private SessionHudStatus hudStatus = SessionHudStatus.Offline;
+        private string hudMessage = "Offline — F8 creates a friends-only lobby.";
 
         public event Action<SessionInputFrame> InputReceived;
         public event Action<SessionInputFrame> InputEventReceived;
@@ -79,6 +81,30 @@ namespace CrawlOnline
             return roster == null ? new byte[0] : roster.GetConnectedPeerSlots();
         }
 
+        public SessionHudState GetHudState()
+        {
+            bool[] slots = new bool[4];
+            bool isHost = IsAuthoritativeHost;
+            int visibleLocalSlot = localSlot == byte.MaxValue ? -1 : localSlot;
+            if (InLobby)
+            {
+                slots[0] = true;
+                if (isHost && roster != null)
+                {
+                    byte[] peers = roster.GetConnectedPeerSlots();
+                    for (int i = 0; i < peers.Length; i++)
+                    {
+                        if (peers[i] < slots.Length) slots[peers[i]] = true;
+                    }
+                }
+                else if (visibleLocalSlot >= 0 && visibleLocalSlot < slots.Length)
+                {
+                    slots[visibleLocalSlot] = true;
+                }
+            }
+            return new SessionHudState(hudStatus, isHost, visibleLocalSlot, slots, hudMessage);
+        }
+
         public void Host()
         {
             if (InLobby)
@@ -88,6 +114,7 @@ namespace CrawlOnline
             }
 
             log.LogInfo("Creating friends-only Crawl Online lobby...");
+            SetHudStatus(SessionHudStatus.CreatingLobby, "Creating friends-only lobby…");
             lobbyCreated.Set(SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypeFriendsOnly, 4));
         }
 
@@ -96,6 +123,7 @@ namespace CrawlOnline
             if (!InLobby)
             {
                 log.LogWarning("Create or join a lobby before inviting friends.");
+                SetHudStatus(SessionHudStatus.Error, "Create or join a lobby before inviting.");
                 return;
             }
 
@@ -233,6 +261,7 @@ namespace CrawlOnline
             if (ioFailure || result.m_eResult != EResult.k_EResultOK)
             {
                 log.LogError("Lobby creation failed: " + result.m_eResult + ", IO failure=" + ioFailure);
+                SetHudStatus(SessionHudStatus.Error, "Lobby creation failed. Press F8 to retry.");
                 return;
             }
 
@@ -247,12 +276,14 @@ namespace CrawlOnline
             SteamMatchmaking.SetLobbyData(lobbyId, LobbyBuildKey, CrawlOnlineRuntime.Version);
             SteamMatchmaking.SetLobbyData(lobbyId, LobbyNonceKey, sessionNonce.ToString("x16", CultureInfo.InvariantCulture));
             log.LogInfo("Hosting authoritative lobby " + lobbyId + " as slot 0. Press F7 to invite friends.");
+            SetHudStatus(SessionHudStatus.WaitingForPeers, "Lobby ready — F7 invites friends.");
         }
 
         private void OnJoinRequested(GameLobbyJoinRequested_t request)
         {
             if (InLobby) Leave();
             log.LogInfo("Joining invited lobby " + request.m_steamIDLobby);
+            SetHudStatus(SessionHudStatus.Authenticating, "Joining invited lobby…");
             lobbyEntered.Set(SteamMatchmaking.JoinLobby(request.m_steamIDLobby));
         }
 
@@ -261,6 +292,7 @@ namespace CrawlOnline
             if (ioFailure || result.m_EChatRoomEnterResponse != (uint)EChatRoomEnterResponse.k_EChatRoomEnterResponseSuccess)
             {
                 log.LogError("Lobby join failed: response=" + result.m_EChatRoomEnterResponse + ", IO failure=" + ioFailure);
+                SetHudStatus(SessionHudStatus.Error, "Could not join lobby. Accept the invite again.");
                 return;
             }
 
@@ -277,12 +309,14 @@ namespace CrawlOnline
                 sessionNonce == 0)
             {
                 log.LogError("Incompatible or incomplete lobby protocol metadata.");
+                SetHudStatus(SessionHudStatus.Error, "Lobby version is incompatible.");
                 Leave();
                 return;
             }
 
             log.LogInfo("Joined lobby " + lobbyId + ", owner=" + ownerId);
             receiveWindow = new SequenceWindow(sessionNonce);
+            SetHudStatus(SessionHudStatus.Authenticating, "Authenticating with host…");
             SendHello();
         }
 
@@ -323,6 +357,7 @@ namespace CrawlOnline
                     log.LogInfo("Authenticated peer " + remote + " as slot " + accepted.AssignedSlot +
                                 " attempt " + accepted.Attempt);
                     Send(remote, PacketCodec.EncodeAccepted(accepted), EP2PSend.k_EP2PSendReliable);
+                    SetHudStatus(SessionHudStatus.Connected, "Peer connected.");
                 }
                 else
                 {
@@ -342,7 +377,8 @@ namespace CrawlOnline
                 }
                 localSlot = accepted.AssignedSlot;
                 log.LogInfo("Host authenticated this peer as slot " + localSlot +
-                            " with authoritative snapshots enabled.");
+                             " with authoritative snapshots enabled.");
+                SetHudStatus(SessionHudStatus.Connected, "Connected to host.");
             }
             else if (type == PacketType.HelloRejected && remote == ownerId && self != ownerId)
             {
@@ -351,6 +387,7 @@ namespace CrawlOnline
                     rejected.SessionNonce == sessionNonce && rejected.Attempt == localAttempt)
                 {
                     log.LogError("Host rejected handshake: " + rejected.Reason);
+                    SetHudStatus(SessionHudStatus.Error, "Host rejected connection: " + rejected.Reason);
                     Leave();
                 }
             }
@@ -439,7 +476,8 @@ namespace CrawlOnline
             }
             log.LogError("P2P session failed for " + remote + ": " +
                          (EP2PSessionError)failure.m_eP2PSessionError +
-                         ". Rejoin the lobby to establish a fresh authenticated attempt.");
+                          ". Rejoin the lobby to establish a fresh authenticated attempt.");
+            SetHudStatus(SessionHudStatus.Error, "Connection lost. Rejoin the lobby to reconnect.");
         }
 
         private void OnLobbyChatUpdated(LobbyChatUpdate_t update)
@@ -520,6 +558,14 @@ namespace CrawlOnline
             localInputSequence = 0;
             localInputEventSequence = 0;
             snapshotSequence = 0;
+            if (hudStatus != SessionHudStatus.Error)
+                SetHudStatus(SessionHudStatus.Offline, "Offline — F8 creates a friends-only lobby.");
+        }
+
+        private void SetHudStatus(SessionHudStatus status, string message)
+        {
+            hudStatus = status;
+            hudMessage = message ?? string.Empty;
         }
 
         private static ulong CreateNonce()

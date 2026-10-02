@@ -27,6 +27,23 @@ No proprietary game binaries or decompiled source are committed to this reposito
 5. Friends accept and run their own local copies.
 6. The mod synchronizes input and authoritative corrections over Steam relay.
 
+## Session HUD and controls
+
+The unobtrusive lower-left **Crawl Online** HUD is available before online peer
+validation. It reports offline, lobby creation, waiting, authentication,
+connected, and recoverable connection-error states without displaying Steam or
+lobby IDs. Its four roster marks show connected slots (slot 0 is the host).
+
+- `F8` — create a friends-only lobby as host
+- `F7` — open the Steam invite dialog while in a lobby
+- `F9` — leave the current lobby
+- `F6` — minimize/restore the HUD
+
+The first-run control hint can be dismissed with **Got it**. The HUD does not
+modify simulation or consume keyboard gameplay input; it only handles clicks
+on its own visible controls. This UI is not evidence of completed release or
+cross-machine peer validation.
+
 ## Install a release
 
 See the short [installation guide](docs/installation.md) for verified install, update, uninstall, and diagnostics on Windows x86 and Linux. Release packages contain only Crawl Online; the installer fetches the pinned BepInEx 5.4.11 loader directly from upstream and never includes Crawl or Steam files.

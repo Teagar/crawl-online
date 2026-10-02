@@ -22,6 +22,7 @@ namespace CrawlOnline.Bootstrap
         private MethodInfo shutdown;
         private MethodInfo fixedTick;
         private MethodInfo lateTick;
+        private MethodInfo drawHud;
         private bool waitingLogged;
 
         private void Awake()
@@ -107,6 +108,14 @@ namespace CrawlOnline.Bootstrap
             }
         }
 
+        private void OnGUI()
+        {
+            if (runtime != null && drawHud != null)
+            {
+                drawHud.Invoke(runtime, null);
+            }
+        }
+
         private void LoadRuntime()
         {
             try
@@ -119,6 +128,7 @@ namespace CrawlOnline.Bootstrap
                 shutdown = type.GetMethod("Shutdown", BindingFlags.Public | BindingFlags.Instance);
                 fixedTick = type.GetMethod("FixedTick", BindingFlags.Public | BindingFlags.Instance);
                 lateTick = type.GetMethod("LateTick", BindingFlags.Public | BindingFlags.Instance);
+                drawHud = type.GetMethod("DrawHud", BindingFlags.Public | BindingFlags.Instance);
                 Logger.LogInfo("Runtime loaded after Crawl initialization");
             }
             catch (Exception exception)
