@@ -53,6 +53,11 @@ The implementation deliberately fails closed. Automatic gameplay resumption and
 snapshot catch-up will be added with authoritative snapshot support rather than
 reusing unknown simulation state.
 
+Gameplay input has two ordering domains per slot: low-latency continuous state
+and reliable press/release events. A disconnected peer cannot authorize either
+domain through its reserved slot until a newer authenticated hello reconnects
+it.
+
 ## Runtime evidence
 
 A legitimate Linux Steam instance loaded the implementation, created a

@@ -10,6 +10,7 @@ namespace CrawlOnline.Protocol
         Disconnect = 6,
         HelloRejected = 7,
         SessionInput = 8,
-        SnapshotAck = 9
+        SnapshotAck = 9,
+        InputEvent = 10
     }
 }

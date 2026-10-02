@@ -7,10 +7,32 @@ namespace CrawlOnline.Protocol
         private byte pendingUp;
         private int downPresentedFrame = -1;
         private int upPresentedFrame = -1;
+        private int latestFrame = -1;
 
         public InputFrame Latest { get { return latest; } }
 
         public void Set(InputFrame frame, int currentFrame)
+        {
+            SetContinuous(frame, currentFrame);
+            AddEdges(frame.DownButtons, frame.UpButtons, currentFrame);
+        }
+
+        public void SetContinuous(InputFrame frame, int currentFrame)
+        {
+            frame.DownButtons = 0;
+            frame.UpButtons = 0;
+            latest = frame;
+            latestFrame = currentFrame;
+        }
+
+        public InputFrame GetContinuous(int currentFrame, int maximumAgeFrames)
+        {
+            if (maximumAgeFrames < 0 || latestFrame < 0 || currentFrame - latestFrame > maximumAgeFrames)
+                return new InputFrame { PlayerId = latest.PlayerId, Tick = latest.Tick };
+            return latest;
+        }
+
+        public void AddEdges(byte downButtons, byte upButtons, int currentFrame)
         {
             if (downPresentedFrame >= 0 && downPresentedFrame != currentFrame)
             {
@@ -22,9 +44,8 @@ namespace CrawlOnline.Protocol
                 pendingUp = 0;
                 upPresentedFrame = -1;
             }
-            latest = frame;
-            pendingDown |= frame.DownButtons;
-            pendingUp |= frame.UpButtons;
+            pendingDown |= downButtons;
+            pendingUp |= upButtons;
         }
 
         public byte GetDown(int currentFrame)

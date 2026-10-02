@@ -12,7 +12,7 @@ namespace CrawlOnline
     {
         private const int Channel = 7;
         private const int MaxPacketSize = 64 * 1024;
-        private const string SessionProtocolVersion = "2";
+        private const string SessionProtocolVersion = "3";
         private const string LobbyPacketProtocolKey = "crawl-online-protocol";
         private const string LobbySessionProtocolKey = "crawl-online-session-protocol";
         private const string LobbyBuildKey = "crawl-online-build";
@@ -35,9 +35,11 @@ namespace CrawlOnline
         private readonly Dictionary<ulong, uint> peerAcknowledgements = new Dictionary<ulong, uint>();
         private readonly Dictionary<ulong, SnapshotHistory> peerSnapshotHistory = new Dictionary<ulong, SnapshotHistory>();
         private uint localInputSequence;
+        private uint localInputEventSequence;
         private uint snapshotSequence;
 
         public event Action<SessionInputFrame> InputReceived;
+        public event Action<SessionInputFrame> InputEventReceived;
         public event Action<WorldSnapshot> SnapshotReceived;
 
         public SteamLobbySession(ManualLogSource logSource)
@@ -147,6 +149,10 @@ namespace CrawlOnline
             if (!InLobby || IsAuthoritativeHost || localSlot == byte.MaxValue || sessionNonce == 0)
                 return false;
             input.PlayerId = localSlot;
+            byte downButtons = input.DownButtons;
+            byte upButtons = input.UpButtons;
+            input.DownButtons = 0;
+            input.UpButtons = 0;
             localInputSequence++;
             if (localInputSequence == 0) localInputSequence = 1;
             var sessionInput = new SessionInputFrame
@@ -155,8 +161,19 @@ namespace CrawlOnline
                 Sequence = localInputSequence,
                 Input = input
             };
-            return Send(ownerId, AuthoritativeCodec.EncodeInput(sessionInput),
+            bool queued = Send(ownerId, AuthoritativeCodec.EncodeInput(sessionInput),
                 EP2PSend.k_EP2PSendUnreliableNoDelay);
+            if (downButtons != 0 || upButtons != 0)
+            {
+                localInputEventSequence++;
+                if (localInputEventSequence == 0) localInputEventSequence = 1;
+                sessionInput.Sequence = localInputEventSequence;
+                sessionInput.Input.DownButtons = downButtons;
+                sessionInput.Input.UpButtons = upButtons;
+                queued &= Send(ownerId, AuthoritativeCodec.EncodeInputEvent(sessionInput),
+                    EP2PSend.k_EP2PSendReliable);
+            }
+            return queued;
         }
 
         public bool BroadcastSnapshot(WorldSnapshot snapshot)
@@ -353,6 +370,20 @@ namespace CrawlOnline
                 Action<SessionInputFrame> callback = InputReceived;
                 if (callback != null) callback(input);
             }
+            else if (type == PacketType.InputEvent && self == ownerId && roster != null && receiveWindow != null)
+            {
+                SessionInputFrame inputEvent;
+                byte assignedSlot;
+                if (!AuthoritativeCodec.TryDecodeInputEvent(packet, out inputEvent) ||
+                    !roster.TryGetSlot(remote.m_SteamID, out assignedSlot) ||
+                    inputEvent.Input.PlayerId != assignedSlot || !receiveWindow.TryAcceptInputEvent(inputEvent))
+                {
+                    log.LogWarning("Rejected stale or unauthorized input event from " + remote);
+                    return;
+                }
+                Action<SessionInputFrame> callback = InputEventReceived;
+                if (callback != null) callback(inputEvent);
+            }
             else if (type == PacketType.Snapshot && remote == ownerId && self != ownerId &&
                      localSlot != byte.MaxValue && receiveWindow != null)
             {
@@ -482,6 +513,7 @@ namespace CrawlOnline
             peerAcknowledgements.Clear();
             peerSnapshotHistory.Clear();
             localInputSequence = 0;
+            localInputEventSequence = 0;
             snapshotSequence = 0;
         }
 

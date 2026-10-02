@@ -38,6 +38,7 @@ namespace CrawlOnline.Authoritative
             session = lobbySession;
             log = logSource;
             session.InputReceived += OnInputReceived;
+            session.InputEventReceived += OnInputEventReceived;
             session.SnapshotReceived += OnSnapshotReceived;
         }
 
@@ -102,6 +103,7 @@ namespace CrawlOnline.Authoritative
         public void Dispose()
         {
             session.InputReceived -= OnInputReceived;
+            session.InputEventReceived -= OnInputEventReceived;
             session.SnapshotReceived -= OnSnapshotReceived;
             inputBridge.Dispose();
         }
@@ -109,7 +111,12 @@ namespace CrawlOnline.Authoritative
         private void OnInputReceived(SessionInputFrame input)
         {
             lastInputSequences[input.Input.PlayerId] = input.Sequence;
-            inputBridge.Set(input);
+            inputBridge.SetContinuous(input);
+        }
+
+        private void OnInputEventReceived(SessionInputFrame input)
+        {
+            inputBridge.AddEdges(input);
         }
 
         private void OnSnapshotReceived(WorldSnapshot snapshot)

@@ -33,6 +33,28 @@ public sealed class AuthoritativeProtocolTests
     }
 
     [Fact]
+    public void ReliableInputEventRoundTripsWithoutMovementState()
+    {
+        var expected = new SessionInputFrame
+        {
+            SessionNonce = 77,
+            Sequence = 12,
+            Input = new InputFrame { PlayerId = 2, Tick = 90, DownButtons = 3, UpButtons = 4 }
+        };
+
+        Assert.True(AuthoritativeCodec.TryDecodeInputEvent(
+            AuthoritativeCodec.EncodeInputEvent(expected), out SessionInputFrame actual));
+        Assert.Equal(expected.SessionNonce, actual.SessionNonce);
+        Assert.Equal(expected.Sequence, actual.Sequence);
+        Assert.Equal(expected.Input.PlayerId, actual.Input.PlayerId);
+        Assert.Equal(expected.Input.Tick, actual.Input.Tick);
+        Assert.Equal(expected.Input.DownButtons, actual.Input.DownButtons);
+        Assert.Equal(expected.Input.UpButtons, actual.Input.UpButtons);
+        Assert.Equal((short)0, actual.Input.MoveX);
+        Assert.Equal((byte)0, actual.Input.HeldButtons);
+    }
+
+    [Fact]
     public void SnapshotRoundTripsCanonicalPlayers()
     {
         WorldSnapshot expected = Snapshot(9);
@@ -170,6 +192,21 @@ public sealed class AuthoritativeProtocolTests
     }
 
     [Fact]
+    public void InputEventsHaveIndependentReliableSequenceWindow()
+    {
+        var window = new SequenceWindow(77);
+        SessionInputFrame movement = Input(77, 100, 1);
+        SessionInputFrame inputEvent = Input(77, 1, 1);
+        inputEvent.Input.DownButtons = 1;
+
+        Assert.True(window.TryAcceptInput(movement));
+        Assert.True(window.TryAcceptInputEvent(inputEvent));
+        Assert.False(window.TryAcceptInputEvent(inputEvent));
+        inputEvent.Sequence = 2;
+        Assert.True(window.TryAcceptInputEvent(inputEvent));
+    }
+
+    [Fact]
     public void SequenceComparisonSupportsUInt32Wrap()
     {
         Assert.True(SequenceWindow.IsNewer(0, uint.MaxValue));
@@ -215,6 +252,24 @@ public sealed class AuthoritativeProtocolTests
         Assert.Equal((byte)3, buffer.GetDown(20));
         buffer.Set(new InputFrame(), 21);
         Assert.Equal((byte)0, buffer.GetDown(21));
+    }
+
+    [Fact]
+    public void ContinuousInputFailsNeutralAfterTimeout()
+    {
+        var buffer = new InputFrameBuffer();
+        buffer.SetContinuous(new InputFrame
+        {
+            PlayerId = 2,
+            MoveX = short.MaxValue,
+            HeldButtons = 7
+        }, 100);
+
+        Assert.Equal(short.MaxValue, buffer.GetContinuous(130, 30).MoveX);
+        InputFrame stale = buffer.GetContinuous(131, 30);
+        Assert.Equal((byte)2, stale.PlayerId);
+        Assert.Equal((short)0, stale.MoveX);
+        Assert.Equal((byte)0, stale.HeldButtons);
     }
 
     private static SessionInputFrame Input(ulong nonce, uint sequence, byte slot)

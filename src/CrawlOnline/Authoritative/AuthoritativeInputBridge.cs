@@ -10,6 +10,7 @@ namespace CrawlOnline.Authoritative
     internal sealed class AuthoritativeInputBridge : IDisposable
     {
         private const string HarmonyId = "dev.teagar.crawl-online.authoritative-input";
+        private const int InputTimeoutFrames = 30;
         private static AuthoritativeInputBridge active;
         private readonly Dictionary<int, InputFrameBuffer> inputs = new Dictionary<int, InputFrameBuffer>();
         private readonly Harmony harmony = new Harmony(HarmonyId);
@@ -29,7 +30,7 @@ namespace CrawlOnline.Authoritative
             Patch("GetInputStart", "StartPrefix");
         }
 
-        public void Set(SessionInputFrame input)
+        public void SetContinuous(SessionInputFrame input)
         {
             InputFrameBuffer buffered;
             if (!inputs.TryGetValue(input.Input.PlayerId, out buffered))
@@ -37,7 +38,18 @@ namespace CrawlOnline.Authoritative
                 buffered = new InputFrameBuffer();
                 inputs.Add(input.Input.PlayerId, buffered);
             }
-            buffered.Set(input.Input, Time.frameCount);
+            buffered.SetContinuous(input.Input, Time.frameCount);
+        }
+
+        public void AddEdges(SessionInputFrame input)
+        {
+            InputFrameBuffer buffered;
+            if (!inputs.TryGetValue(input.Input.PlayerId, out buffered))
+            {
+                buffered = new InputFrameBuffer();
+                inputs.Add(input.Input.PlayerId, buffered);
+            }
+            buffered.AddEdges(input.Input.DownButtons, input.Input.UpButtons, Time.frameCount);
         }
 
         public void Clear()
@@ -68,7 +80,8 @@ namespace CrawlOnline.Authoritative
         {
             InputFrameBuffer input;
             if (active == null || !active.TryGet(__instance, out input)) return true;
-            __result = new Vector2(Expand(input.Latest.MoveX), Expand(input.Latest.MoveY));
+            InputFrame frame = input.GetContinuous(Time.frameCount, InputTimeoutFrames);
+            __result = new Vector2(Expand(frame.MoveX), Expand(frame.MoveY));
             return false;
         }
 
@@ -86,7 +99,7 @@ namespace CrawlOnline.Authoritative
         {
             InputFrameBuffer input;
             if (active == null || !active.TryGet(player, out input)) return true;
-            byte buttons = kind == 0 ? input.Latest.HeldButtons :
+            byte buttons = kind == 0 ? input.GetContinuous(Time.frameCount, InputTimeoutFrames).HeldButtons :
                 (kind == 1 ? input.GetDown(Time.frameCount) : input.GetUp(Time.frameCount));
             result = (buttons & button) != 0;
             return false;

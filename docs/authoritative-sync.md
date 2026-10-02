@@ -37,8 +37,12 @@ missing, extra, duplicate, or lifecycle-incompatible objects fail closed.
 
 ## Correction policy
 
-- Input packets use unreliable/no-delay delivery; a newer frame supersedes an
-  older frame.
+- Continuous movement/held input uses unreliable/no-delay delivery; a newer
+  frame supersedes an older frame and the host neutralizes it after 30 render
+  frames without an update so disconnect/loss cannot leave controls stuck.
+- Press/release edges use a separate reliable packet and independent per-slot
+  sequence. This avoids losing one-frame actions without retransmitting them as
+  duplicate gameplay events.
 - Snapshots use unreliable delivery and periodic resend through newer state.
 - Acknowledgements are reliable and prune bounded host history.
 - Session nonce, sender slot, and sequence validation happen before state is

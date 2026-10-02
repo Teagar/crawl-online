@@ -8,6 +8,8 @@ namespace CrawlOnline.Protocol
         private readonly ulong sessionNonce;
         private readonly uint[] lastInput = new uint[4];
         private readonly bool[] hasInput = new bool[4];
+        private readonly uint[] lastInputEvent = new uint[4];
+        private readonly bool[] hasInputEvent = new bool[4];
         private uint lastSnapshot;
         private bool hasSnapshot;
 
@@ -33,6 +35,16 @@ namespace CrawlOnline.Protocol
                 (hasSnapshot && !IsNewer(snapshot.Sequence, lastSnapshot))) return false;
             lastSnapshot = snapshot.Sequence;
             hasSnapshot = true;
+            return true;
+        }
+
+        public bool TryAcceptInputEvent(SessionInputFrame frame)
+        {
+            byte slot = frame.Input.PlayerId;
+            if (frame.SessionNonce != sessionNonce || slot > 3 ||
+                (hasInputEvent[slot] && !IsNewer(frame.Sequence, lastInputEvent[slot]))) return false;
+            lastInputEvent[slot] = frame.Sequence;
+            hasInputEvent[slot] = true;
             return true;
         }
 

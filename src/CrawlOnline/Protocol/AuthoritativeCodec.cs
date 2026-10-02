@@ -10,6 +10,7 @@ namespace CrawlOnline.Protocol
         private const int EnemySize = 39;
         private const int MaximumEnemies = 256;
         public const int SessionInputPacketSize = 30;
+        public const int InputEventPacketSize = 25;
         public const int SnapshotAckPacketSize = 18;
         public const int MaximumSnapshotPacketSize = SnapshotHeaderSize + PlayerSize * 4 + EnemySize * MaximumEnemies;
 
@@ -42,6 +43,31 @@ namespace CrawlOnline.Protocol
             frame.Input.MoveX = ReadInt16(data, 26);
             frame.Input.MoveY = ReadInt16(data, 28);
             return true;
+        }
+
+        public static byte[] EncodeInputEvent(SessionInputFrame frame)
+        {
+            byte[] data = CreatePacket(PacketType.InputEvent, InputEventPacketSize);
+            WriteUInt64(data, 6, frame.SessionNonce);
+            WriteUInt32(data, 14, frame.Sequence);
+            data[18] = frame.Input.PlayerId;
+            data[19] = frame.Input.DownButtons;
+            data[20] = frame.Input.UpButtons;
+            WriteUInt32(data, 21, frame.Input.Tick);
+            return data;
+        }
+
+        public static bool TryDecodeInputEvent(byte[] data, out SessionInputFrame frame)
+        {
+            frame = new SessionInputFrame();
+            if (!HasHeader(data, PacketType.InputEvent, InputEventPacketSize)) return false;
+            frame.SessionNonce = ReadUInt64(data, 6);
+            frame.Sequence = ReadUInt32(data, 14);
+            frame.Input.PlayerId = data[18];
+            frame.Input.DownButtons = data[19];
+            frame.Input.UpButtons = data[20];
+            frame.Input.Tick = ReadUInt32(data, 21);
+            return frame.Input.DownButtons != 0 || frame.Input.UpButtons != 0;
         }
 
         public static byte[] EncodeSnapshot(WorldSnapshot snapshot)
