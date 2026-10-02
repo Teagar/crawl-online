@@ -63,7 +63,9 @@ dotnet test -c Release
 No Steam launch option is required on Windows. The installer scripts preserve
 other BepInEx plugins when uninstalling Crawl Online.
 
-See [docs/architecture.md](docs/architecture.md) and [docs/research.md](docs/research.md).
+See [docs/architecture.md](docs/architecture.md),
+[docs/determinism.md](docs/determinism.md), and
+[docs/research.md](docs/research.md).
 
 ## Legal boundary
 
