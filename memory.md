@@ -26,6 +26,7 @@ Deliver an installable Windows/Linux mod that supports internet host/join and a 
 - Crawl's Windows executable is 32-bit and requires the x86 BepInEx/Unity Doorstop package.
 - Release packaging emits only Crawl Online DLLs, verified manifests, and installers; installers pin and hash-check upstream BepInEx 5.4.11, verify known Crawl assembly hashes by platform, and uninstall only Crawl Online plugin files while preserving BepInEx and other plugins.
 - Build-time references to Crawl gameplay types are avoided; SDK resolution encounters incompatible transitive framework metadata, while Harmony/reflection preserves the net35 runtime boundary.
+- The session HUD is a passive IMGUI overlay: it uses only original solid-colour primitives plus the legitimate game's runtime-loaded GUI font, exposes no clickable controls, and scales at integer 1x/2x for 540p/1080p. F5 toggles help and F6 minimizes it.
 - Determinism traces begin at `SystemGame.OnLevelLoad`; inputs are captured after `SystemInput.UpdateInternal` and replayed through `PlayerData` getters with separate held/down/up masks.
 - Record mode must feed quantized inputs back into its own simulation, and traces must record render frames plus fixed-step counts.
 - Unity RNG is global across gameplay and cosmetic systems; hash its canonically ordered full state and never reset it per frame.

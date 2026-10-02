@@ -37,12 +37,12 @@ lobby IDs. Its four roster marks show connected slots (slot 0 is the host).
 - `F8` — create a friends-only lobby as host
 - `F7` — open the Steam invite dialog while in a lobby
 - `F9` — leave the current lobby
+- `F5` — hide/show the control hint
 - `F6` — minimize/restore the HUD
 
-The first-run control hint can be dismissed with **Got it**. The HUD does not
-modify simulation or consume keyboard gameplay input; it only handles clicks
-on its own visible controls. This UI is not evidence of completed release or
-cross-machine peer validation.
+The control hint can be hidden with `F5`. The HUD has no clickable controls,
+does not modify simulation, and does not consume mouse gameplay input. This UI
+is not evidence of completed release or cross-machine peer validation.
 
 ## Install a release
 

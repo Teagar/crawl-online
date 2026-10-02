@@ -21,11 +21,15 @@ namespace CrawlOnline
             synchronizer = new AuthoritativeSynchronizer(session, log);
             harness = DeterminismHarness.TryCreate(log);
             hud = new SessionHud();
-            log.LogInfo("Ready: F8 host, F7 invite, F9 leave");
+            log.LogInfo("Ready: F8 host, F7 invite, F9 leave, F5 help, F6 HUD");
         }
 
         public void Tick()
         {
+            if (Input.GetKeyDown(KeyCode.F5))
+            {
+                hud.ToggleTutorial();
+            }
             if (Input.GetKeyDown(KeyCode.F6))
             {
                 hud.ToggleMinimized();
