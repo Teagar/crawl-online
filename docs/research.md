@@ -63,3 +63,10 @@ override: BepInEx reported `System platform: Windows`, accepted the Windows
 assembly fingerprint, loaded the runtime, and produced zero missing-script
 errors. Human validation on native Windows hardware remains part of the card
 review and eventual release gate.
+
+The authoritative session protocol has a Linux host smoke test: Steam created a
+friends-only lobby, published the session metadata, reserved slot 0 for the
+owner, and left normally. The official Windows binary repeated creation and
+leave under Proton through the Windows BepInEx path. Cross-platform peer join
+cannot be claimed from a single Steam account and remains pending two-machine
+validation.

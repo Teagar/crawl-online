@@ -65,7 +65,8 @@ other BepInEx plugins when uninstalling Crawl Online.
 
 See [docs/architecture.md](docs/architecture.md),
 [docs/determinism.md](docs/determinism.md), and
-[docs/research.md](docs/research.md). Contributor-facing runtime findings are
+[docs/research.md](docs/research.md). The authenticated lobby handshake is in
+[docs/session-protocol.md](docs/session-protocol.md). Contributor-facing runtime findings are
 collected in [docs/modding-notes.md](docs/modding-notes.md).
 
 ## Legal boundary

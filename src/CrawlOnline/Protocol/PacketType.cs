@@ -7,6 +7,7 @@ namespace CrawlOnline.Protocol
         Input = 3,
         StateHash = 4,
         Snapshot = 5,
-        Disconnect = 6
+        Disconnect = 6,
+        HelloRejected = 7
     }
 }

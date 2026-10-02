@@ -43,8 +43,8 @@ public sealed class PacketCodecTests
     [Fact]
     public void ReadsControlPacketType()
     {
-        byte[] packet = PacketCodec.EncodeControl(PacketType.Hello);
+        byte[] packet = PacketCodec.EncodeControl(PacketType.Disconnect);
         Assert.True(PacketCodec.TryReadType(packet, out PacketType type));
-        Assert.Equal(PacketType.Hello, type);
+        Assert.Equal(PacketType.Disconnect, type);
     }
 }

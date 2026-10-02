@@ -1,4 +1,6 @@
 using System;
+using System.Globalization;
+using System.Security.Cryptography;
 using BepInEx.Logging;
 using CrawlOnline.Protocol;
 using Steamworks;
@@ -9,14 +11,25 @@ namespace CrawlOnline
     {
         private const int Channel = 7;
         private const int MaxPacketSize = 64 * 1024;
+        private const string SessionProtocolVersion = "1";
+        private const string LobbyPacketProtocolKey = "crawl-online-protocol";
+        private const string LobbySessionProtocolKey = "crawl-online-session-protocol";
+        private const string LobbyBuildKey = "crawl-online-build";
+        private const string LobbyNonceKey = "crawl-online-session-nonce";
         private readonly ManualLogSource log;
         private readonly byte[] receiveBuffer = new byte[MaxPacketSize];
         private readonly CallResult<LobbyCreated_t> lobbyCreated;
         private readonly CallResult<LobbyEnter_t> lobbyEntered;
         private readonly Callback<GameLobbyJoinRequested_t> joinRequested;
         private readonly Callback<P2PSessionRequest_t> sessionRequested;
+        private readonly Callback<P2PSessionConnectFail_t> sessionConnectFailed;
+        private readonly Callback<LobbyChatUpdate_t> lobbyChatUpdated;
         private CSteamID lobbyId = CSteamID.Nil;
         private CSteamID ownerId = CSteamID.Nil;
+        private SessionRoster roster;
+        private ulong sessionNonce;
+        private uint localAttempt;
+        private byte localSlot = byte.MaxValue;
 
         public SteamLobbySession(ManualLogSource logSource)
         {
@@ -25,6 +38,8 @@ namespace CrawlOnline
             lobbyEntered = CallResult<LobbyEnter_t>.Create(OnLobbyEntered);
             joinRequested = Callback<GameLobbyJoinRequested_t>.Create(OnJoinRequested);
             sessionRequested = Callback<P2PSessionRequest_t>.Create(OnSessionRequested);
+            sessionConnectFailed = Callback<P2PSessionConnectFail_t>.Create(OnSessionConnectFailed);
+            lobbyChatUpdated = Callback<LobbyChatUpdate_t>.Create(OnLobbyChatUpdated);
             SteamNetworking.AllowP2PPacketRelay(true);
         }
 
@@ -63,10 +78,20 @@ namespace CrawlOnline
                 return;
             }
 
+            int memberCount = SteamMatchmaking.GetNumLobbyMembers(lobbyId);
+            CSteamID self = SteamUser.GetSteamID();
+            for (int i = 0; i < memberCount; i++)
+            {
+                CSteamID member = SteamMatchmaking.GetLobbyMemberByIndex(lobbyId, i);
+                if (member != self)
+                {
+                    Send(member, PacketCodec.EncodeControl(PacketType.Disconnect), EP2PSend.k_EP2PSendReliable);
+                    SteamNetworking.CloseP2PSessionWithUser(member);
+                }
+            }
             SteamMatchmaking.LeaveLobby(lobbyId);
             log.LogInfo("Left Crawl Online lobby " + lobbyId);
-            lobbyId = CSteamID.Nil;
-            ownerId = CSteamID.Nil;
+            ResetSession();
         }
 
         public void Poll()
@@ -100,6 +125,8 @@ namespace CrawlOnline
             lobbyEntered.Cancel();
             joinRequested.Unregister();
             sessionRequested.Unregister();
+            sessionConnectFailed.Unregister();
+            lobbyChatUpdated.Unregister();
         }
 
         private void OnLobbyCreated(LobbyCreated_t result, bool ioFailure)
@@ -112,13 +139,19 @@ namespace CrawlOnline
 
             lobbyId = new CSteamID(result.m_ulSteamIDLobby);
             ownerId = SteamUser.GetSteamID();
-            SteamMatchmaking.SetLobbyData(lobbyId, "crawl-online-protocol", PacketCodec.ProtocolVersion.ToString());
-            SteamMatchmaking.SetLobbyData(lobbyId, "crawl-online-build", CrawlOnlineRuntime.Version);
-            log.LogInfo("Hosting lobby " + lobbyId + ". Press F7 to invite friends.");
+            sessionNonce = CreateNonce();
+            roster = new SessionRoster(ownerId.m_SteamID, sessionNonce, 4);
+            localSlot = 0;
+            SteamMatchmaking.SetLobbyData(lobbyId, LobbyPacketProtocolKey, PacketCodec.ProtocolVersion.ToString(CultureInfo.InvariantCulture));
+            SteamMatchmaking.SetLobbyData(lobbyId, LobbySessionProtocolKey, SessionProtocolVersion);
+            SteamMatchmaking.SetLobbyData(lobbyId, LobbyBuildKey, CrawlOnlineRuntime.Version);
+            SteamMatchmaking.SetLobbyData(lobbyId, LobbyNonceKey, sessionNonce.ToString("x16", CultureInfo.InvariantCulture));
+            log.LogInfo("Hosting authoritative lobby " + lobbyId + " as slot 0. Press F7 to invite friends.");
         }
 
         private void OnJoinRequested(GameLobbyJoinRequested_t request)
         {
+            if (InLobby) Leave();
             log.LogInfo("Joining invited lobby " + request.m_steamIDLobby);
             lobbyEntered.Set(SteamMatchmaking.JoinLobby(request.m_steamIDLobby));
         }
@@ -133,16 +166,21 @@ namespace CrawlOnline
 
             lobbyId = new CSteamID(result.m_ulSteamIDLobby);
             ownerId = SteamMatchmaking.GetLobbyOwner(lobbyId);
-            string protocol = SteamMatchmaking.GetLobbyData(lobbyId, "crawl-online-protocol");
-            if (protocol != PacketCodec.ProtocolVersion.ToString())
+            string protocol = SteamMatchmaking.GetLobbyData(lobbyId, LobbyPacketProtocolKey);
+            string sessionProtocol = SteamMatchmaking.GetLobbyData(lobbyId, LobbySessionProtocolKey);
+            string nonce = SteamMatchmaking.GetLobbyData(lobbyId, LobbyNonceKey);
+            if (protocol != PacketCodec.ProtocolVersion.ToString(CultureInfo.InvariantCulture) ||
+                sessionProtocol != SessionProtocolVersion ||
+                !ulong.TryParse(nonce, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out sessionNonce) ||
+                sessionNonce == 0)
             {
-                log.LogError("Incompatible lobby protocol: " + protocol);
+                log.LogError("Incompatible or incomplete lobby protocol metadata.");
                 Leave();
                 return;
             }
 
             log.LogInfo("Joined lobby " + lobbyId + ", owner=" + ownerId);
-            Send(ownerId, PacketCodec.EncodeControl(PacketType.Hello), EP2PSend.k_EP2PSendReliable);
+            SendHello();
         }
 
         private void OnSessionRequested(P2PSessionRequest_t request)
@@ -154,7 +192,7 @@ namespace CrawlOnline
             }
 
             SteamNetworking.AcceptP2PSessionWithUser(request.m_steamIDRemote);
-            log.LogInfo("Accepted P2P session from " + request.m_steamIDRemote);
+            log.LogInfo("Accepted P2P transport from lobby member " + request.m_steamIDRemote + "; awaiting authenticated hello.");
         }
 
         private void HandlePacket(CSteamID remote, byte[] packet)
@@ -166,15 +204,115 @@ namespace CrawlOnline
                 return;
             }
 
-            if (type == PacketType.Hello && SteamUser.GetSteamID() == ownerId)
+            CSteamID self = SteamUser.GetSteamID();
+            if (type == PacketType.Hello && self == ownerId)
             {
-                log.LogInfo("Peer handshake from " + remote);
-                Send(remote, PacketCodec.EncodeControl(PacketType.HelloAccepted), EP2PSend.k_EP2PSendReliable);
+                SessionHello hello;
+                if (!PacketCodec.TryDecodeHello(packet, out hello) || roster == null)
+                {
+                    log.LogWarning("Rejected malformed peer hello from " + remote);
+                    return;
+                }
+                SessionAccepted accepted;
+                SessionRejected rejected;
+                if (roster.TryAccept(remote.m_SteamID, hello, out accepted, out rejected))
+                {
+                    log.LogInfo("Authenticated peer " + remote + " as slot " + accepted.AssignedSlot +
+                                " attempt " + accepted.Attempt);
+                    Send(remote, PacketCodec.EncodeAccepted(accepted), EP2PSend.k_EP2PSendReliable);
+                }
+                else
+                {
+                    log.LogWarning("Rejected peer " + remote + ": " + rejected.Reason);
+                    Send(remote, PacketCodec.EncodeRejected(rejected), EP2PSend.k_EP2PSendReliable);
+                }
             }
-            else if (type == PacketType.HelloAccepted)
+            else if (type == PacketType.HelloAccepted && remote == ownerId && self != ownerId)
             {
-                log.LogInfo("Host accepted Crawl Online handshake.");
+                SessionAccepted accepted;
+                if (!PacketCodec.TryDecodeAccepted(packet, out accepted) ||
+                    !SessionRoster.ValidateAcceptance(accepted, ownerId.m_SteamID, sessionNonce, localAttempt))
+                {
+                    log.LogError("Rejected invalid host acceptance from " + remote);
+                    Leave();
+                    return;
+                }
+                localSlot = accepted.AssignedSlot;
+                log.LogInfo("Host authenticated this peer as slot " + localSlot +
+                            " with authoritative snapshots enabled.");
             }
+            else if (type == PacketType.HelloRejected && remote == ownerId && self != ownerId)
+            {
+                SessionRejected rejected;
+                if (PacketCodec.TryDecodeRejected(packet, out rejected) &&
+                    rejected.SessionNonce == sessionNonce && rejected.Attempt == localAttempt)
+                {
+                    log.LogError("Host rejected handshake: " + rejected.Reason);
+                    Leave();
+                }
+            }
+            else if (type == PacketType.Disconnect)
+            {
+                log.LogWarning("Peer ended Crawl Online session: " + remote);
+                SteamNetworking.CloseP2PSessionWithUser(remote);
+                if (self == ownerId && roster != null) roster.MarkDisconnected(remote.m_SteamID);
+                else if (remote == ownerId) Leave();
+            }
+            else
+            {
+                log.LogWarning("Rejected unexpected packet " + type + " from " + remote);
+            }
+        }
+
+        private void OnSessionConnectFailed(P2PSessionConnectFail_t failure)
+        {
+            CSteamID remote = failure.m_steamIDRemote;
+            SteamNetworking.CloseP2PSessionWithUser(remote);
+            if (SteamUser.GetSteamID() == ownerId && roster != null)
+            {
+                roster.MarkDisconnected(remote.m_SteamID);
+            }
+            log.LogError("P2P session failed for " + remote + ": " +
+                         (EP2PSessionError)failure.m_eP2PSessionError +
+                         ". Rejoin the lobby to establish a fresh authenticated attempt.");
+        }
+
+        private void OnLobbyChatUpdated(LobbyChatUpdate_t update)
+        {
+            if (!InLobby || update.m_ulSteamIDLobby != lobbyId.m_SteamID) return;
+            EChatMemberStateChange change = (EChatMemberStateChange)update.m_rgfChatMemberStateChange;
+            EChatMemberStateChange departed = EChatMemberStateChange.k_EChatMemberStateChangeLeft |
+                                               EChatMemberStateChange.k_EChatMemberStateChangeDisconnected |
+                                               EChatMemberStateChange.k_EChatMemberStateChangeKicked |
+                                               EChatMemberStateChange.k_EChatMemberStateChangeBanned;
+            if ((change & departed) == 0) return;
+
+            CSteamID peer = new CSteamID(update.m_ulSteamIDUserChanged);
+            SteamNetworking.CloseP2PSessionWithUser(peer);
+            if (roster != null) roster.Remove(peer.m_SteamID);
+            log.LogInfo("Lobby member departed and P2P state was cleared: " + peer);
+            if (peer == ownerId && SteamUser.GetSteamID() != ownerId)
+            {
+                log.LogError("Authoritative host left the lobby; session ended explicitly.");
+                SteamMatchmaking.LeaveLobby(lobbyId);
+                ResetSession();
+            }
+        }
+
+        private void SendHello()
+        {
+            localAttempt++;
+            if (localAttempt == 0) localAttempt = 1;
+            var hello = new SessionHello
+            {
+                SessionNonce = sessionNonce,
+                SenderId = SteamUser.GetSteamID().m_SteamID,
+                Attempt = localAttempt,
+                RequestedSlot = localSlot,
+                Capabilities = SessionCapabilities.Current
+            };
+            Send(ownerId, PacketCodec.EncodeHello(hello), EP2PSend.k_EP2PSendReliable);
+            log.LogInfo("Sent authenticated hello attempt " + localAttempt + " to host " + ownerId);
         }
 
         private bool IsLobbyMember(CSteamID steamId)
@@ -197,6 +335,30 @@ namespace CrawlOnline
             {
                 log.LogError("Failed to queue P2P packet for " + remote);
             }
+        }
+
+        private void ResetSession()
+        {
+            lobbyId = CSteamID.Nil;
+            ownerId = CSteamID.Nil;
+            roster = null;
+            sessionNonce = 0;
+            localAttempt = 0;
+            localSlot = byte.MaxValue;
+        }
+
+        private static ulong CreateNonce()
+        {
+            byte[] bytes = new byte[8];
+            var random = new RNGCryptoServiceProvider();
+            ulong value;
+            do
+            {
+                random.GetBytes(bytes);
+                value = BitConverter.ToUInt64(bytes, 0);
+            }
+            while (value == 0);
+            return value;
         }
     }
 }
