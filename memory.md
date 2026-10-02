@@ -24,6 +24,7 @@ Deliver an installable Windows/Linux mod that supports internet host/join and a 
 - Crawl's Unity 5.4 Mono runtime requires BepInEx 5.4.11, .NET 3.5 plugin targets, and a late `SystemSteam.Awake` chainloader entrypoint; newer BepInEx runtime patches fail on this Mono build.
 - The researched Linux `Assembly-CSharp.dll` SHA-256 is `d6f169535cf2123568359550d75fe1a9924948e04d8d0beb2eed7eb187542f84`; the Windows hash is `e93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e`.
 - Crawl's Windows executable is 32-bit and requires the x86 BepInEx/Unity Doorstop package.
+- Release packaging emits only Crawl Online DLLs, verified manifests, and installers; installers pin and hash-check upstream BepInEx 5.4.11, verify known Crawl assembly hashes by platform, and uninstall only Crawl Online plugin files while preserving BepInEx and other plugins.
 - Build-time references to Crawl gameplay types are avoided; SDK resolution encounters incompatible transitive framework metadata, while Harmony/reflection preserves the net35 runtime boundary.
 - Determinism traces begin at `SystemGame.OnLevelLoad`; inputs are captured after `SystemInput.UpdateInternal` and replayed through `PlayerData` getters with separate held/down/up masks.
 - Record mode must feed quantized inputs back into its own simulation, and traces must record render frames plus fixed-step counts.

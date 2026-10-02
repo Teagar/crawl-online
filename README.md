@@ -6,6 +6,7 @@ The goal is real netplay: every participant owns, runs, and renders their own co
 
 > [!WARNING]
 > This project is an early compatibility and determinism prototype. It is not a playable release yet.
+> Installer packages verify files and are reversible, but do not validate multiplayer end to end.
 
 ## Confirmed game architecture
 
@@ -25,6 +26,10 @@ No proprietary game binaries or decompiled source are committed to this reposito
 4. The host presses `F7` to open the Steam invitation dialog.
 5. Friends accept and run their own local copies.
 6. The mod synchronizes input and authoritative corrections over Steam relay.
+
+## Install a release
+
+See the short [installation guide](docs/installation.md) for verified install, update, uninstall, and diagnostics on Windows x86 and Linux. Release packages contain only Crawl Online; the installer fetches the pinned BepInEx 5.4.11 loader directly from upstream and never includes Crawl or Steam files.
 
 ## Build
 

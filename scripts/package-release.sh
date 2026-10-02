@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Creates a redistributable package containing only Crawl Online binaries and installers.
+set -Eeuo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+VERSION="${1:?usage: scripts/package-release.sh VERSION LINUX_BEPINEX_ZIP WINDOWS_BEPINEX_ZIP [output-dir]}"
+LINUX_BEPINEX="${2:?missing Linux BepInEx 5.4.11 archive}"
+WINDOWS_BEPINEX="${3:?missing Windows x86 BepInEx 5.4.11 archive}"
+OUTPUT="${4:-$ROOT/dist}"
+BOOTSTRAP="${CRAWL_ONLINE_BOOTSTRAP:-$ROOT/src/CrawlOnline.Bootstrap/bin/Release/net35/CrawlOnline.dll}"
+RUNTIME="${CRAWL_ONLINE_RUNTIME:-$ROOT/src/CrawlOnline/bin/Release/net35/CrawlOnline.Runtime.dll}"
+STAGE="$OUTPUT/CrawlOnline-$VERSION"
+
+for file in "$BOOTSTRAP" "$RUNTIME" "$LINUX_BEPINEX" "$WINDOWS_BEPINEX"; do
+  [[ -f "$file" ]] || { printf 'Required file is missing: %s\n' "$file" >&2; exit 1; }
+done
+[[ "$VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]] || { printf 'Invalid version: %s\n' "$VERSION" >&2; exit 2; }
+
+rm -rf "$STAGE"
+mkdir -p "$STAGE/plugins"
+cp "$BOOTSTRAP" "$RUNTIME" "$STAGE/plugins/"
+cp "$ROOT/scripts/install-release-linux.sh" "$ROOT/scripts/install-release-windows.ps1" "$STAGE/"
+chmod +x "$STAGE/install-release-linux.sh"
+
+bootstrap_hash="$(sha256sum "$STAGE/plugins/CrawlOnline.dll" | awk '{print $1}')"
+runtime_hash="$(sha256sum "$STAGE/plugins/CrawlOnline.Runtime.dll" | awk '{print $1}')"
+linux_hash="$(sha256sum "$LINUX_BEPINEX" | awk '{print $1}')"
+windows_hash="$(sha256sum "$WINDOWS_BEPINEX" | awk '{print $1}')"
+cat > "$STAGE/CrawlOnline.release.json" <<EOF_MANIFEST
+{
+  "schemaVersion": 1,
+  "version": "$VERSION",
+  "plugins": {
+    "CrawlOnline.dll": "$bootstrap_hash",
+    "CrawlOnline.Runtime.dll": "$runtime_hash"
+  },
+  "bepInEx": {
+    "version": "5.4.11.0",
+    "linux-x64": {
+      "url": "https://github.com/BepInEx/BepInEx/releases/download/v5.4.11/BepInEx_unix_5.4.11.0.zip",
+      "sha256": "$linux_hash"
+    },
+    "win-x86": {
+      "url": "https://github.com/BepInEx/BepInEx/releases/download/v5.4.11/BepInEx_x86_5.4.11.0.zip",
+      "sha256": "$windows_hash"
+    }
+  }
+}
+EOF_MANIFEST
+(
+  cd "$OUTPUT"
+  rm -f "CrawlOnline-$VERSION.zip"
+  zip -qr "CrawlOnline-$VERSION.zip" "CrawlOnline-$VERSION"
+  sha256sum "CrawlOnline-$VERSION.zip" > "CrawlOnline-$VERSION.zip.sha256"
+)
+printf 'Release package created: %s/CrawlOnline-%s.zip\n' "$OUTPUT" "$VERSION"
