@@ -1,4 +1,5 @@
 using CrawlOnline.Protocol;
+using System.IO;
 using Xunit;
 
 namespace CrawlOnline.Protocol.Tests;
@@ -57,5 +58,40 @@ public sealed class TraceCodecTests
 
         Assert.Equal(first.Value, equivalent.Value);
         Assert.NotEqual(first.Value, reordered.Value);
+    }
+
+    [Fact]
+    public void TraceStreamRoundTripsMixedRecords()
+    {
+        var stream = new MemoryStream();
+        var header = new TraceHeader
+        {
+            RandomSeed = 42,
+            FixedTicksPerSecond = 50,
+            PlayerCount = 2,
+            StateHashInterval = 10
+        };
+        var input = new InputFrame { Tick = 3, PlayerId = 1, MoveX = -4, MoveY = 5, Buttons = 2 };
+        var stateHash = new StateHashRecord { Tick = 10, Hash = 0x1122334455667788UL };
+
+        using (var writer = new TraceWriter(stream, header, true))
+        {
+            writer.WriteInput(input);
+            writer.WriteStateHash(stateHash);
+        }
+
+        stream.Position = 0;
+        using var reader = new TraceReader(stream, true);
+        Assert.Equal(header.RandomSeed, reader.Header.RandomSeed);
+
+        Assert.True(reader.TryRead(out TraceRecord first));
+        Assert.Equal(TraceRecordType.Input, first.Type);
+        Assert.Equal(input, first.Input);
+
+        Assert.True(reader.TryRead(out TraceRecord second));
+        Assert.Equal(TraceRecordType.StateHash, second.Type);
+        Assert.Equal(stateHash.Tick, second.StateHash.Tick);
+        Assert.Equal(stateHash.Hash, second.StateHash.Hash);
+        Assert.False(reader.TryRead(out _));
     }
 }
