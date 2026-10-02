@@ -126,6 +126,17 @@ namespace CrawlOnline.Protocol
             return connected.ToArray();
         }
 
+        public byte[] GetConnectedPeerSlots()
+        {
+            var connected = new List<byte>();
+            foreach (Peer peer in peers.Values)
+            {
+                if (peer.Id != hostId && peer.Connected) connected.Add(peer.Slot);
+            }
+            connected.Sort();
+            return connected.ToArray();
+        }
+
         public static bool ValidateAcceptance(SessionAccepted accepted, ulong expectedHostId,
             ulong expectedNonce, uint expectedAttempt)
         {

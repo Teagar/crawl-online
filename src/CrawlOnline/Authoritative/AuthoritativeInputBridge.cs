@@ -52,6 +52,11 @@ namespace CrawlOnline.Authoritative
             buffered.AddEdges(input.Input.DownButtons, input.Input.UpButtons, Time.frameCount);
         }
 
+        public void Reserve(byte slot)
+        {
+            if (!inputs.ContainsKey(slot)) inputs.Add(slot, new InputFrameBuffer());
+        }
+
         public void Clear()
         {
             inputs.Clear();

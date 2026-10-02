@@ -23,7 +23,10 @@ namespace CrawlOnline.Authoritative
         private readonly Dictionary<uint, bool> enemyLifeRequests = new Dictionary<uint, bool>();
         private readonly HashSet<uint> enemyDespawnRequests = new HashSet<uint>();
         private readonly HashSet<uint> enemySpawnRequests = new HashSet<uint>();
+        private readonly HashSet<byte> managedBotSlots = new HashSet<byte>();
+        private byte configuredLocalSlot = byte.MaxValue;
         private WorldSnapshot pendingSnapshot;
+        private WorldSnapshot latestSnapshot;
         private uint tick;
         private readonly uint[] lastInputSequences = new uint[4];
         private uint transitionGeneration;
@@ -52,6 +55,8 @@ namespace CrawlOnline.Authoritative
             tick++;
             if (!session.InLobby)
             {
+                try { ReleaseNetworkAssignments(); }
+                catch (Exception exception) { ReportRuntimeError("assignment cleanup", exception); }
                 inputBridge.Clear();
                 hostEnemyIds.Clear();
                 clientEnemies.Clear();
@@ -59,17 +64,26 @@ namespace CrawlOnline.Authoritative
                 enemyLifeRequests.Clear();
                 enemyDespawnRequests.Clear();
                 enemySpawnRequests.Clear();
+                managedBotSlots.Clear();
+                configuredLocalSlot = byte.MaxValue;
                 nextEnemyId = 1;
                 hasRequestedTransition = false;
                 requestedHeroSlot = byte.MaxValue;
                 hasRequestedGameLifecycle = false;
                 requestedLevel = -1;
                 pendingSnapshot = null;
+                latestSnapshot = null;
                 return;
             }
 
             if (session.IsAuthoritativeHost)
             {
+                try { EnsureNetworkAssignments(null); }
+                catch (Exception exception)
+                {
+                    ReportRuntimeError("host assignment", exception);
+                    return;
+                }
                 if (tick % SnapshotIntervalFrames == 0)
                 {
                     try
@@ -85,6 +99,12 @@ namespace CrawlOnline.Authoritative
             }
             else if (session.LocalSlot != byte.MaxValue)
             {
+                try { EnsureNetworkAssignments(latestSnapshot); }
+                catch (Exception exception)
+                {
+                    ReportRuntimeError("client assignment", exception);
+                    return;
+                }
                 InputFrame input;
                 try
                 {
@@ -130,6 +150,100 @@ namespace CrawlOnline.Authoritative
         private void OnSnapshotReceived(WorldSnapshot snapshot)
         {
             pendingSnapshot = snapshot;
+            latestSnapshot = snapshot;
+        }
+
+        private void EnsureNetworkAssignments(WorldSnapshot snapshot)
+        {
+            object systemPlayers = UnityEngine.Object.FindObjectOfType(GameApi.Type("SystemPlayers"));
+            if (systemPlayers == null) return;
+            if (!session.IsAuthoritativeHost && configuredLocalSlot != session.LocalSlot)
+            {
+                if (!MoveLocalController(systemPlayers, session.LocalSlot)) return;
+                configuredLocalSlot = session.LocalSlot;
+            }
+
+            var desiredBots = new HashSet<byte>();
+            if (session.IsAuthoritativeHost)
+            {
+                byte[] slots = session.GetConnectedPeerSlots();
+                for (int i = 0; i < slots.Length; i++) desiredBots.Add(slots[i]);
+            }
+            else if (snapshot != null)
+            {
+                for (int i = 0; i < snapshot.Players.Length; i++)
+                {
+                    PlayerSnapshot player = snapshot.Players[i];
+                    if (player.Slot != session.LocalSlot && (player.Flags & PlayerSnapshotFlags.Active) != 0)
+                        desiredBots.Add(player.Slot);
+                }
+            }
+
+            object[] players = GameApi.GetPlayers();
+            foreach (byte slot in desiredBots)
+            {
+                object player = FindPlayerBySlot(players, slot);
+                if (player == null || !GameApi.Property<bool>(player, "IsActive"))
+                {
+                    GameApi.InvokeWithArgument(systemPlayers, "AssignBot", (int)slot);
+                    players = GameApi.GetPlayers();
+                }
+                inputBridge.Reserve(slot);
+                managedBotSlots.Add(slot);
+            }
+
+            var release = new List<byte>();
+            foreach (byte slot in managedBotSlots)
+                if (!desiredBots.Contains(slot)) release.Add(slot);
+            for (int i = 0; i < release.Count; i++)
+            {
+                GameApi.InvokeWithArgument(systemPlayers, "UnassignPlayer", (int)release[i]);
+                managedBotSlots.Remove(release[i]);
+            }
+        }
+
+        private static bool MoveLocalController(object systemPlayers, byte targetSlot)
+        {
+            object[] players = GameApi.GetPlayers();
+            object source = null;
+            for (int i = 0; i < players.Length; i++)
+            {
+                object candidate = players[i];
+                if (candidate != null && GameApi.Property<bool>(candidate, "IsActive") &&
+                    GameApi.Property<bool>(candidate, "IsHuman"))
+                {
+                    source = candidate;
+                    break;
+                }
+            }
+            if (source == null) return false;
+            int sourceSlot = GameApi.Property<int>(source, "Id");
+            if (sourceSlot == targetSlot) return true;
+            object controller = GameApi.Property<object>(source, "ControllerId");
+            object profile = GameApi.Property<object>(source, "Profile");
+            string name = GameApi.Property<string>(source, "Name");
+            object target = FindPlayerBySlot(players, targetSlot);
+            if (target != null && GameApi.Property<bool>(target, "IsActive"))
+                GameApi.InvokeWithArgument(systemPlayers, "UnassignPlayer", (int)targetSlot);
+            GameApi.InvokeWithArgument(systemPlayers, "UnassignPlayer", sourceSlot);
+            GameApi.InvokeWithArguments(systemPlayers, "AssignPlayer", (int)targetSlot, controller);
+            players = GameApi.GetPlayers();
+            target = FindPlayerBySlot(players, targetSlot);
+            if (target == null) return false;
+            if (profile != null) GameApi.InvokeWithArgument(target, "SetProfile", profile);
+            if (name != null) GameApi.InvokeWithArgument(target, "SetName", name);
+            return true;
+        }
+
+        private void ReleaseNetworkAssignments()
+        {
+            if (managedBotSlots.Count == 0 && configuredLocalSlot == byte.MaxValue) return;
+            object systemPlayers = UnityEngine.Object.FindObjectOfType(GameApi.Type("SystemPlayers"));
+            if (systemPlayers == null) return;
+            var release = new List<byte>(managedBotSlots);
+            for (int i = 0; i < release.Count; i++)
+                GameApi.InvokeWithArgument(systemPlayers, "UnassignPlayer", (int)release[i]);
+            if (configuredLocalSlot != byte.MaxValue) MoveLocalController(systemPlayers, 0);
         }
 
         private WorldSnapshot CaptureSnapshot()

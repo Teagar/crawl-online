@@ -47,6 +47,12 @@ missing, extra, duplicate, or lifecycle-incompatible objects fail closed.
 - Acknowledgements are reliable and prune bounded host history.
 - Session nonce, sender slot, and sequence validation happen before state is
   exposed to runtime application code.
+- The host materializes authenticated remote slots through Crawl's normal bot
+  assignment API and immediately reserves neutral network input for them. A
+  client moves its existing physical controller/profile to its host-assigned
+  global slot, materializes other active slots as neutral bots, and restores the
+  controller to slot 0 when leaving. Bot-ness itself is perspective-local and
+  is not reconciled as authoritative gameplay state.
 - Unknown transitions fail closed rather than mutating local game objects with
   incomplete state.
 - A room mismatch resolves the host's canonical room key against the client's

@@ -36,6 +36,13 @@ contains device edge handling and directional repetition. Inputs are associated
 with render updates, while the trace separately counts fixed steps: Unity may
 run zero or several `FixedUpdate` calls for one input frame.
 
+Online slot identity is global, but controller assignment is local. Remote
+slots can be materialized with `SystemPlayers.AssignBot` and neutralized at the
+`PlayerData` getter boundary. A joining client transfers its physical
+controller/profile to the host-assigned slot and restores it to slot 0 on leave;
+using the bot flag as authoritative state would be incorrect because the same
+global player is human on one peer and virtual on the others.
+
 Record mode feeds quantized captured axes back through the same getter patches.
 Without that feedback, recording would simulate full-precision input while
 replay simulated the network representation, introducing a measurement error.

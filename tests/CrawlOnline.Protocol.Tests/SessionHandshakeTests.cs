@@ -109,6 +109,18 @@ public sealed class SessionHandshakeTests
     }
 
     [Fact]
+    public void ConnectedPeerSlotsExcludeDisconnectedReservations()
+    {
+        var roster = new SessionRoster(100, 500, 4);
+        Assert.True(roster.TryAccept(102, Hello(102, 500, 1), out SessionAccepted first, out _));
+        Assert.True(roster.TryAccept(101, Hello(101, 500, 1), out SessionAccepted second, out _));
+        Assert.Equal(new byte[] { first.AssignedSlot, second.AssignedSlot }, roster.GetConnectedPeerSlots());
+
+        Assert.True(roster.MarkDisconnected(102));
+        Assert.Equal(new byte[] { second.AssignedSlot }, roster.GetConnectedPeerSlots());
+    }
+
+    [Fact]
     public void ClientValidatesHostNonceAttemptSlotAndCapability()
     {
         var accepted = new SessionAccepted

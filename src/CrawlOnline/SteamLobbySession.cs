@@ -74,6 +74,11 @@ namespace CrawlOnline
             get { return sessionNonce; }
         }
 
+        public byte[] GetConnectedPeerSlots()
+        {
+            return roster == null ? new byte[0] : roster.GetConnectedPeerSlots();
+        }
+
         public void Host()
         {
             if (InLobby)
