@@ -106,7 +106,7 @@ namespace CrawlOnline.Protocol
         public bool TryGetSlot(ulong peerId, out byte slot)
         {
             Peer peer;
-            if (peers.TryGetValue(peerId, out peer))
+            if (peers.TryGetValue(peerId, out peer) && peer.Connected)
             {
                 slot = peer.Slot;
                 return true;

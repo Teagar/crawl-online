@@ -93,6 +93,22 @@ public sealed class SessionHandshakeTests
     }
 
     [Fact]
+    public void DisconnectedPeerCannotAuthorizeGameplayUntilNewHello()
+    {
+        var roster = new SessionRoster(100, 500, 4);
+        Assert.True(roster.TryAccept(101, Hello(101, 500, 1), out SessionAccepted first, out _));
+        Assert.True(roster.TryGetSlot(101, out byte connectedSlot));
+        Assert.Equal(first.AssignedSlot, connectedSlot);
+
+        Assert.True(roster.MarkDisconnected(101));
+        Assert.False(roster.TryGetSlot(101, out _));
+
+        Assert.True(roster.TryAccept(101, Hello(101, 500, 2), out _, out _));
+        Assert.True(roster.TryGetSlot(101, out byte reconnectedSlot));
+        Assert.Equal(first.AssignedSlot, reconnectedSlot);
+    }
+
+    [Fact]
     public void ClientValidatesHostNonceAttemptSlotAndCapability()
     {
         var accepted = new SessionAccepted
