@@ -99,3 +99,10 @@ frame 23,490 and diverged in exact and quantized state from frame 30 onward,
 without a harness exception. Because that recording predates record-side
 quantized-input feedback and required a trace-header migration, a clean current
 format run remains necessary before selecting the synchronization architecture.
+
+A subsequent clean trace-version-2 recording used symmetric quantized input and
+captured 19,380 frames, 36,574 inputs, and 517 checkpoints. Replay compared 198
+checkpoints through frame 6,240; exact and quantized critical state diverged at
+every checkpoint beginning at frame 30. Neither run logged a harness exception.
+Delayed-input lockstep is therefore rejected, and host-authoritative snapshots
+are the selected synchronization model.

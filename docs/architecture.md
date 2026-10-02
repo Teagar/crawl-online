@@ -4,17 +4,24 @@
 
 Every peer runs and renders a local, legitimate Crawl installation. Steam provides lobby discovery, invitations, identity, NAT traversal, and packet relay. Crawl Online does not transmit video.
 
-## Proposed simulation model
+## Selected simulation model
 
-The initial experiment uses delayed input lockstep:
+The lobby owner is authoritative. Peers send timestamped/numbered input frames;
+the owner advances gameplay and sends periodic state snapshots plus corrections.
+Clients predict presentation where safe and reconcile critical state to the
+owner. Steam P2P relay remains the transport.
 
-- simulation advances at a fixed tick;
-- peers exchange compact input frames;
-- inputs are buffered for a small configurable delay;
-- peers calculate periodic deterministic state hashes;
-- the lobby owner detects divergence.
+- inputs preserve movement plus held/pressed/released button masks;
+- packets carry monotonic sequence/tick identifiers;
+- snapshots cover stable player, room, enemy, RNG, and transition state;
+- clients acknowledge snapshots so the host can bound correction history;
+- state hashes remain diagnostics for detecting and localizing drift.
 
-The release architecture will only retain pure lockstep if the determinism harness proves it stable. Otherwise, the lobby owner becomes authoritative and sends corrective snapshots. This decision is deliberately evidence-driven.
+Delayed-input lockstep was rejected by measurement. A clean trace-version-2
+record/replay pair used identical quantized input semantics and diverged in both
+exact and quantized critical state at the first checkpoint, logical frame 30.
+Every compared checkpoint diverged. This satisfies the predeclared fallback
+condition for host authority; lockstep is not a release path for this game build.
 
 ## Transport
 
@@ -37,12 +44,17 @@ PlayerData.GetInput* -> SystemInput.Input*
 
 This is the preferred Harmony patch boundary because gameplay code asks `PlayerData` for movement and buttons rather than reading devices directly in most paths.
 
-## Known determinism risks
+## Measured determinism constraints
 
 - gameplay uses `UnityEngine.Random` extensively;
 - cosmetic effects also consume `UnityEngine.Random`, potentially at frame-dependent rates;
 - movement integrates with `Time.fixedDeltaTime`;
 - coroutines and physics callback ordering can differ between machines;
 - user unlock state influences selectable content.
+
+These risks are no longer assumptions supporting a lockstep proposal: the
+harness observed critical state divergence under equal nominal render settings.
+The exact first subsystem to diverge may still be diagnosed, but it does not
+change the authoritative-host decision.
 
 The protocol must also negotiate game assembly hashes, mod version, unlock policy, and fixed simulation settings before starting a match.

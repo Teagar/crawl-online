@@ -12,7 +12,7 @@ Deliver an installable Windows/Linux mod that supports internet host/join and a 
 - For every executable change, use the full Gartrol lifecycle: verify mission/card readiness and routing, claim before mutation, maintain the lease, track subtasks/dependencies, attach test evidence and Git provenance, deliver as done, and leave validation/rejection to a human.
 - Agents deliver cards as `done`; only humans validate or reject deliveries.
 - No proprietary game binaries, assemblies, Steam libraries, or decompiled source may be committed.
-- The initial simulation experiment is delayed input lockstep; retain it only if the determinism harness proves stability. Otherwise use a host-authoritative model with corrective snapshots.
+- Delayed-input lockstep is rejected by a clean trace-v2 experiment: with symmetric quantized input, exact and quantized critical state diverged from the first checkpoint at frame 30. Use a host-authoritative model with snapshots and corrective reconciliation.
 - Steam provides lobby discovery, invitations, identity, NAT traversal, and relay transport; video streaming is outside the product boundary.
 - Crawl's Unity 5.4 Mono runtime requires BepInEx 5.4.11, .NET 3.5 plugin targets, and a late `SystemSteam.Awake` chainloader entrypoint; newer BepInEx runtime patches fail on this Mono build.
 - The researched Linux `Assembly-CSharp.dll` SHA-256 is `d6f169535cf2123568359550d75fe1a9924948e04d8d0beb2eed7eb187542f84`; the Windows hash is `e93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e`.
@@ -22,7 +22,7 @@ Deliver an installable Windows/Linux mod that supports internet host/join and a 
 - Record mode must feed quantized inputs back into its own simulation, and traces must record render frames plus fixed-step counts.
 - Unity RNG is global across gameplay and cosmetic systems; hash its canonically ordered full state and never reset it per frame.
 - Linux direct tests require Steam app IDs in the environment. Use disposable working directories, suppress Steam Cloud/achievement writes, and preserve logs before cleanup.
-- A gameplay trace has exercised the hooks and state hasher for 25,050 logical frames; this is runtime evidence only, not proof that lockstep is viable.
+- A clean trace-v2 recording exercised 19,380 frames, 36,574 inputs, and 517 checkpoints; replay compared 198 checkpoints through frame 6,240 and every exact/quantized hash diverged from frame 30 without a harness exception.
 
 ## Reconciliation
 

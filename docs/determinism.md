@@ -70,3 +70,14 @@ recording predates record-side feedback of quantized axes and was migrated from
 trace header version 1 to version 2. That asymmetry can itself create state
 differences. A fresh version-2 record/replay pair using identical quantized
 input semantics is required before closing the decision gate.
+
+The clean version-2 run then recorded 19,380 logical frames, 36,574 inputs, and
+517 checkpoints with record-side quantized-input feedback enabled. Its replay
+compared 198 checkpoints through frame 6,240. All 198 exact and quantized hashes
+diverged, starting at frame 30. Record and replay logs show successful runtime
+load and RNG initialization with no harness exception or automatic disable.
+
+**Decision:** delayed-input lockstep is rejected for the researched Crawl build.
+The networking implementation must use an authoritative lobby owner with state
+snapshots and corrective reconciliation. The trace harness remains useful for
+snapshot coverage and drift diagnostics, not as a lockstep release gate.
