@@ -5,7 +5,7 @@ namespace CrawlOnline.Protocol
     public static class AuthoritativeCodec
     {
         private const uint Magic = 0x434F4E4C;
-        private const int SnapshotHeaderSize = 70;
+        private const int SnapshotHeaderSize = 86;
         private const int PlayerSize = 28;
         private const int EnemySize = 39;
         private const int MaximumEnemies = 256;
@@ -53,6 +53,8 @@ namespace CrawlOnline.Protocol
                 throw new ArgumentException("Snapshots require one input sequence per player slot.", "snapshot");
             if (snapshot.Enemies == null || snapshot.Enemies.Length > MaximumEnemies)
                 throw new ArgumentOutOfRangeException("snapshot", "Snapshots support at most 256 active enemies.");
+            if (snapshot.RandomStateWords == null || snapshot.RandomStateWords.Length != 4)
+                throw new ArgumentException("Snapshots require the four Unity random-state words.", "snapshot");
             ValidatePlayerOrder(snapshot.Players);
             ValidateEnemyOrder(snapshot.Enemies);
 
@@ -69,8 +71,9 @@ namespace CrawlOnline.Protocol
             WriteInt32(data, 51, snapshot.RoomDepth);
             WriteUInt32(data, 55, snapshot.TransitionGeneration);
             WriteUInt64(data, 59, snapshot.RandomStateHash);
-            data[67] = (byte)snapshot.Players.Length;
-            WriteUInt16(data, 68, (ushort)snapshot.Enemies.Length);
+            for (int i = 0; i < 4; i++) WriteUInt32(data, 67 + i * 4, snapshot.RandomStateWords[i]);
+            data[83] = (byte)snapshot.Players.Length;
+            WriteUInt16(data, 84, (ushort)snapshot.Enemies.Length);
             int offset = SnapshotHeaderSize;
             for (int i = 0; i < snapshot.Players.Length; i++)
             {
@@ -109,8 +112,8 @@ namespace CrawlOnline.Protocol
             snapshot = null;
             if (data == null || data.Length < SnapshotHeaderSize ||
                 !HasHeaderPrefix(data, PacketType.Snapshot)) return false;
-            int count = data[67];
-            int enemyCount = ReadUInt16(data, 68);
+            int count = data[83];
+            int enemyCount = ReadUInt16(data, 84);
             if (count > 4 || enemyCount > MaximumEnemies ||
                 data.Length != SnapshotHeaderSize + count * PlayerSize + enemyCount * EnemySize ||
                 (data[38] & ~(byte)(WorldSnapshotFlags.GameInProgress | WorldSnapshotFlags.HasCurrentRoom)) != 0)
@@ -129,10 +132,12 @@ namespace CrawlOnline.Protocol
                 RoomDepth = ReadInt32(data, 51),
                 TransitionGeneration = ReadUInt32(data, 55),
                 RandomStateHash = ReadUInt64(data, 59),
+                RandomStateWords = new uint[4],
                 Players = new PlayerSnapshot[count],
                 Enemies = new EnemySnapshot[enemyCount]
             };
             for (int i = 0; i < 4; i++) decoded.LastInputSequences[i] = ReadUInt32(data, 22 + i * 4);
+            for (int i = 0; i < 4; i++) decoded.RandomStateWords[i] = ReadUInt32(data, 67 + i * 4);
             int offset = SnapshotHeaderSize;
             byte previousSlot = 0;
             for (int i = 0; i < count; i++)

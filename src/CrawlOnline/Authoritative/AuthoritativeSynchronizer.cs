@@ -121,7 +121,8 @@ namespace CrawlOnline.Authoritative
             {
                 HostTick = tick,
                 LastInputSequences = (uint[])lastInputSequences.Clone(),
-                RandomStateHash = StateHasher.CalculateRandomStateHash()
+                RandomStateHash = StateHasher.CalculateRandomStateHash(),
+                RandomStateWords = StateHasher.CaptureRandomStateWords()
             };
             try
             {
@@ -380,6 +381,7 @@ namespace CrawlOnline.Authoritative
             }
             for (int i = 0; i < snapshot.Enemies.Length; i++)
                 ApplyEnemy(resolvedEnemies[i], snapshot.Enemies[i]);
+            StateHasher.ApplyRandomStateWords(snapshot.RandomStateWords);
             return true;
         }
 

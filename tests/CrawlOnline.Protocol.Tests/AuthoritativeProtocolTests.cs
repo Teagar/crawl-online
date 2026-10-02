@@ -81,6 +81,7 @@ public sealed class AuthoritativeProtocolTests
         Assert.Equal(expected.Level, actual.Level);
         Assert.Equal(expected.RoomX, actual.RoomX);
         Assert.Equal(expected.RandomStateHash, actual.RandomStateHash);
+        Assert.Equal(expected.RandomStateWords, actual.RandomStateWords);
         Assert.Equal(2, actual.Players.Length);
         Assert.Equal(expected.Players[0].PositionX, actual.Players[0].PositionX);
         Assert.Equal(expected.Players[0].Flags, actual.Players[0].Flags);
@@ -227,7 +228,8 @@ public sealed class AuthoritativeProtocolTests
             RoomY = 44000,
             RoomDepth = 5,
             TransitionGeneration = 2,
-            RandomStateHash = 0x8877665544332211UL
+            RandomStateHash = 0x8877665544332211UL,
+            RandomStateWords = new uint[] { 1, 2, uint.MaxValue, 4 }
         };
     }
 }

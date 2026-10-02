@@ -77,6 +77,7 @@ namespace CrawlOnline.Protocol
         public int RoomDepth;
         public uint TransitionGeneration;
         public ulong RandomStateHash;
+        public uint[] RandomStateWords = new uint[4];
         public PlayerSnapshot[] Players = new PlayerSnapshot[0];
         public EnemySnapshot[] Enemies = new EnemySnapshot[0];
     }

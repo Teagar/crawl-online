@@ -47,6 +47,11 @@ bots, audio, and visual effects. A rendering or audio difference can therefore
 shift later gameplay randomness. The harness intentionally observes this risk
 instead of resetting RNG every frame.
 
+On Unity 5.4.2f2 the public random state contains four 32-bit words. The
+authoritative protocol transports all four in canonical field-name order and
+restores them only after a snapshot passes correction preflight; the existing
+state hash remains diagnostic.
+
 The initial seed is applied at the game-scene `SystemGame.OnLevelLoad` barrier,
 before level generation. Menu input remains live; logical trace frames begin at
 that barrier. Random-state fields are sorted by name before hashing so runtime

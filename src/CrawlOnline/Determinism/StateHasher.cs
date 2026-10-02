@@ -54,11 +54,7 @@ namespace CrawlOnline.Determinism
         private static void AddRandomState(ref StableHash64 exact, ref StableHash64 quantized)
         {
             object state = UnityEngine.Random.state;
-            FieldInfo[] fields = state.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            Array.Sort(fields, delegate(FieldInfo left, FieldInfo right)
-            {
-                return string.CompareOrdinal(left.Name, right.Name);
-            });
+            FieldInfo[] fields = SortedRandomFields(state);
             AddBoth(ref exact, ref quantized, fields.Length);
             for (int i = 0; i < fields.Length; i++)
             {
@@ -87,6 +83,46 @@ namespace CrawlOnline.Determinism
             var quantized = new StableHash64();
             AddRandomState(ref exact, ref quantized);
             return exact.Value;
+        }
+
+        internal static uint[] CaptureRandomStateWords()
+        {
+            object state = UnityEngine.Random.state;
+            FieldInfo[] fields = SortedRandomFields(state);
+            if (fields.Length != 4)
+                throw new InvalidOperationException("Expected four Unity random-state words, found " + fields.Length + ".");
+            var words = new uint[4];
+            for (int i = 0; i < fields.Length; i++)
+                words[i] = unchecked((uint)Convert.ToInt32(fields[i].GetValue(state)));
+            return words;
+        }
+
+        internal static void ApplyRandomStateWords(uint[] words)
+        {
+            if (words == null || words.Length != 4) throw new ArgumentException("Four RNG words are required.", "words");
+            object state = UnityEngine.Random.state;
+            FieldInfo[] fields = SortedRandomFields(state);
+            if (fields.Length != words.Length)
+                throw new InvalidOperationException("Unity random-state layout is incompatible.");
+            for (int i = 0; i < fields.Length; i++)
+            {
+                object value = fields[i].FieldType == typeof(uint)
+                    ? (object)words[i]
+                    : unchecked((int)words[i]);
+                fields[i].SetValue(state, value);
+            }
+            typeof(UnityEngine.Random).GetProperty("state", BindingFlags.Public | BindingFlags.Static)
+                .SetValue(null, state, null);
+        }
+
+        private static FieldInfo[] SortedRandomFields(object state)
+        {
+            FieldInfo[] fields = state.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            Array.Sort(fields, delegate(FieldInfo left, FieldInfo right)
+            {
+                return string.CompareOrdinal(left.Name, right.Name);
+            });
+            return fields;
         }
 
         private static void AddLevel(ref StableHash64 exact, ref StableHash64 quantized)
