@@ -17,19 +17,23 @@ are acknowledged so the host can keep only a bounded correction history.
 The fixed, versioned snapshot header includes:
 
 - session nonce and snapshot sequence;
-- host simulation tick and last processed input sequence;
+- host simulation tick, lifecycle flags, and last processed input sequence for each player slot;
 - level and canonical current-room position/depth;
 - transition generation;
 - canonical RNG-state hash.
 
 Up to four player records are sorted by unique slot and include role/lifecycle
 flags, gameplay state, quantized position/velocity, and current/maximum health.
-The complete four-player packet is currently 167 bytes, below Steam's practical
-P2P limits and small enough for periodic unreliable delivery.
+Enemy records use a host-assigned non-zero lifetime ID plus a hashed local
+archetype key, lifecycle flags, gameplay state, quantized position/velocity, and
+health. The codec caps active enemies at 256; the largest legal packet is about
+10 KiB, below the transport's 64 KiB receive limit.
 
-The schema intentionally excludes Unity instance IDs, object names, reflection
-order, and direct serialized game objects. Enemy and transition payloads will be
-added only with stable spawn identities and explicit application semantics.
+The schema intentionally excludes Unity instance IDs, raw object names,
+reflection order, and direct serialized game objects. Archetype names are
+normalized locally and only their stable hash crosses the network. A client
+binds a host enemy ID to the nearest unmatched local object with the same hash;
+missing, extra, duplicate, or lifecycle-incompatible objects fail closed.
 
 ## Correction policy
 

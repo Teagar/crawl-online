@@ -13,6 +13,14 @@ namespace CrawlOnline.Protocol
         Present = 16
     }
 
+    [Flags]
+    public enum WorldSnapshotFlags : byte
+    {
+        None = 0,
+        GameInProgress = 1,
+        HasCurrentRoom = 2
+    }
+
     public struct SessionInputFrame
     {
         public ulong SessionNonce;
@@ -33,12 +41,36 @@ namespace CrawlOnline.Protocol
         public int HealthMaximum;
     }
 
+    [Flags]
+    public enum EnemySnapshotFlags : byte
+    {
+        None = 0,
+        Active = 1,
+        Alive = 2,
+        AiControlled = 4
+    }
+
+    public struct EnemySnapshot
+    {
+        public uint Id;
+        public ulong ArchetypeHash;
+        public EnemySnapshotFlags Flags;
+        public short State;
+        public int PositionX;
+        public int PositionY;
+        public int VelocityX;
+        public int VelocityY;
+        public int HealthCurrent;
+        public int HealthMaximum;
+    }
+
     public sealed class WorldSnapshot
     {
         public ulong SessionNonce;
         public uint Sequence;
         public uint HostTick;
-        public uint LastInputSequence;
+        public uint[] LastInputSequences = new uint[4];
+        public WorldSnapshotFlags Flags;
         public int Level;
         public int RoomX;
         public int RoomY;
@@ -46,6 +78,7 @@ namespace CrawlOnline.Protocol
         public uint TransitionGeneration;
         public ulong RandomStateHash;
         public PlayerSnapshot[] Players = new PlayerSnapshot[0];
+        public EnemySnapshot[] Enemies = new EnemySnapshot[0];
     }
 
     public struct SnapshotAcknowledgement

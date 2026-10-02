@@ -12,7 +12,7 @@ namespace CrawlOnline
     {
         private const int Channel = 7;
         private const int MaxPacketSize = 64 * 1024;
-        private const string SessionProtocolVersion = "1";
+        private const string SessionProtocolVersion = "2";
         private const string LobbyPacketProtocolKey = "crawl-online-protocol";
         private const string LobbySessionProtocolKey = "crawl-online-session-protocol";
         private const string LobbyBuildKey = "crawl-online-build";
@@ -33,6 +33,7 @@ namespace CrawlOnline
         private byte localSlot = byte.MaxValue;
         private SequenceWindow receiveWindow;
         private readonly Dictionary<ulong, uint> peerAcknowledgements = new Dictionary<ulong, uint>();
+        private readonly Dictionary<ulong, SnapshotHistory> peerSnapshotHistory = new Dictionary<ulong, SnapshotHistory>();
         private uint localInputSequence;
         private uint snapshotSequence;
 
@@ -171,9 +172,27 @@ namespace CrawlOnline
             bool queued = true;
             for (int i = 0; i < peers.Length; i++)
             {
+                SnapshotHistory history;
+                if (!peerSnapshotHistory.TryGetValue(peers[i], out history))
+                {
+                    history = new SnapshotHistory(32);
+                    peerSnapshotHistory.Add(peers[i], history);
+                }
+                history.Add(snapshot);
                 queued &= Send(new CSteamID(peers[i]), packet, EP2PSend.k_EP2PSendUnreliable);
             }
             return queued;
+        }
+
+        public bool AcknowledgeSnapshot(uint sequence)
+        {
+            if (!InLobby || IsAuthoritativeHost || localSlot == byte.MaxValue || sessionNonce == 0 || sequence == 0)
+                return false;
+            return Send(ownerId, AuthoritativeCodec.EncodeAcknowledgement(new SnapshotAcknowledgement
+            {
+                SessionNonce = sessionNonce,
+                Sequence = sequence
+            }), EP2PSend.k_EP2PSendReliable);
         }
 
         public void Dispose()
@@ -227,9 +246,11 @@ namespace CrawlOnline
             ownerId = SteamMatchmaking.GetLobbyOwner(lobbyId);
             string protocol = SteamMatchmaking.GetLobbyData(lobbyId, LobbyPacketProtocolKey);
             string sessionProtocol = SteamMatchmaking.GetLobbyData(lobbyId, LobbySessionProtocolKey);
+            string build = SteamMatchmaking.GetLobbyData(lobbyId, LobbyBuildKey);
             string nonce = SteamMatchmaking.GetLobbyData(lobbyId, LobbyNonceKey);
             if (protocol != PacketCodec.ProtocolVersion.ToString(CultureInfo.InvariantCulture) ||
                 sessionProtocol != SessionProtocolVersion ||
+                build != CrawlOnlineRuntime.Version ||
                 !ulong.TryParse(nonce, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out sessionNonce) ||
                 sessionNonce == 0)
             {
@@ -344,11 +365,6 @@ namespace CrawlOnline
                 }
                 Action<WorldSnapshot> callback = SnapshotReceived;
                 if (callback != null) callback(snapshot);
-                Send(ownerId, AuthoritativeCodec.EncodeAcknowledgement(new SnapshotAcknowledgement
-                {
-                    SessionNonce = sessionNonce,
-                    Sequence = snapshot.Sequence
-                }), EP2PSend.k_EP2PSendReliable);
             }
             else if (type == PacketType.SnapshotAck && self == ownerId && roster != null)
             {
@@ -366,6 +382,9 @@ namespace CrawlOnline
                     SequenceWindow.IsNewer(acknowledgement.Sequence, previous))
                 {
                     peerAcknowledgements[remote.m_SteamID] = acknowledgement.Sequence;
+                    SnapshotHistory history;
+                    if (peerSnapshotHistory.TryGetValue(remote.m_SteamID, out history))
+                        history.Acknowledge(acknowledgement.Sequence);
                 }
             }
             else
@@ -400,6 +419,8 @@ namespace CrawlOnline
             CSteamID peer = new CSteamID(update.m_ulSteamIDUserChanged);
             SteamNetworking.CloseP2PSessionWithUser(peer);
             if (roster != null) roster.Remove(peer.m_SteamID);
+            peerAcknowledgements.Remove(peer.m_SteamID);
+            peerSnapshotHistory.Remove(peer.m_SteamID);
             log.LogInfo("Lobby member departed and P2P state was cleared: " + peer);
             if (peer == ownerId && SteamUser.GetSteamID() != ownerId)
             {
@@ -459,6 +480,7 @@ namespace CrawlOnline
             localSlot = byte.MaxValue;
             receiveWindow = null;
             peerAcknowledgements.Clear();
+            peerSnapshotHistory.Clear();
             localInputSequence = 0;
             snapshotSequence = 0;
         }

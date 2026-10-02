@@ -53,6 +53,22 @@ public sealed class AuthoritativeProtocolTests
             },
             new PlayerSnapshot { Slot = 2, Flags = PlayerSnapshotFlags.Active }
         };
+        expected.Enemies = new[]
+        {
+            new EnemySnapshot
+            {
+                Id = 7,
+                ArchetypeHash = 0x1234567890abcdefUL,
+                Flags = EnemySnapshotFlags.Active | EnemySnapshotFlags.Alive | EnemySnapshotFlags.AiControlled,
+                State = 4,
+                PositionX = 500,
+                PositionY = -600,
+                VelocityX = 70,
+                VelocityY = -80,
+                HealthCurrent = 900,
+                HealthMaximum = 1000
+            }
+        };
 
         byte[] encoded = AuthoritativeCodec.EncodeSnapshot(expected);
 
@@ -60,7 +76,8 @@ public sealed class AuthoritativeProtocolTests
         Assert.Equal(expected.SessionNonce, actual.SessionNonce);
         Assert.Equal(expected.Sequence, actual.Sequence);
         Assert.Equal(expected.HostTick, actual.HostTick);
-        Assert.Equal(expected.LastInputSequence, actual.LastInputSequence);
+        Assert.Equal(expected.LastInputSequences, actual.LastInputSequences);
+        Assert.Equal(expected.Flags, actual.Flags);
         Assert.Equal(expected.Level, actual.Level);
         Assert.Equal(expected.RoomX, actual.RoomX);
         Assert.Equal(expected.RandomStateHash, actual.RandomStateHash);
@@ -68,6 +85,10 @@ public sealed class AuthoritativeProtocolTests
         Assert.Equal(expected.Players[0].PositionX, actual.Players[0].PositionX);
         Assert.Equal(expected.Players[0].Flags, actual.Players[0].Flags);
         Assert.Equal((byte)2, actual.Players[1].Slot);
+        Assert.Single(actual.Enemies);
+        Assert.Equal(expected.Enemies[0].Id, actual.Enemies[0].Id);
+        Assert.Equal(expected.Enemies[0].ArchetypeHash, actual.Enemies[0].ArchetypeHash);
+        Assert.Equal(expected.Enemies[0].HealthCurrent, actual.Enemies[0].HealthCurrent);
     }
 
     [Fact]
@@ -79,6 +100,28 @@ public sealed class AuthoritativeProtocolTests
             new PlayerSnapshot { Slot = 2 },
             new PlayerSnapshot { Slot = 1 }
         };
+        Assert.Throws<ArgumentException>(() => AuthoritativeCodec.EncodeSnapshot(snapshot));
+    }
+
+    [Fact]
+    public void SnapshotRejectsUnknownWorldFlags()
+    {
+        byte[] encoded = AuthoritativeCodec.EncodeSnapshot(Snapshot(1));
+        encoded[38] = 0x80;
+
+        Assert.False(AuthoritativeCodec.TryDecodeSnapshot(encoded, out _));
+    }
+
+    [Fact]
+    public void SnapshotRejectsDuplicateEnemyIds()
+    {
+        WorldSnapshot snapshot = Snapshot(1);
+        snapshot.Enemies = new[]
+        {
+            new EnemySnapshot { Id = 4, ArchetypeHash = 1 },
+            new EnemySnapshot { Id = 4, ArchetypeHash = 2 }
+        };
+
         Assert.Throws<ArgumentException>(() => AuthoritativeCodec.EncodeSnapshot(snapshot));
     }
 
@@ -135,6 +178,31 @@ public sealed class AuthoritativeProtocolTests
         Assert.Equal(0, history.Count);
     }
 
+    [Fact]
+    public void InputEdgesWaitForFirstConsumerAndAppearForOneRenderFrame()
+    {
+        var buffer = new InputFrameBuffer();
+        buffer.Set(new InputFrame { DownButtons = 1 }, 10);
+        buffer.Set(new InputFrame { DownButtons = 2 }, 11);
+
+        Assert.Equal((byte)3, buffer.GetDown(12));
+        Assert.Equal((byte)3, buffer.GetDown(12));
+        Assert.Equal((byte)0, buffer.GetDown(13));
+    }
+
+    [Fact]
+    public void InputEdgesReceivedAfterPresentationCarryIntoNextFrame()
+    {
+        var buffer = new InputFrameBuffer();
+        buffer.Set(new InputFrame { DownButtons = 1 }, 20);
+        Assert.Equal((byte)1, buffer.GetDown(20));
+
+        buffer.Set(new InputFrame { DownButtons = 2 }, 20);
+        Assert.Equal((byte)3, buffer.GetDown(20));
+        buffer.Set(new InputFrame(), 21);
+        Assert.Equal((byte)0, buffer.GetDown(21));
+    }
+
     private static SessionInputFrame Input(ulong nonce, uint sequence, byte slot)
     {
         return new SessionInputFrame
@@ -152,7 +220,8 @@ public sealed class AuthoritativeProtocolTests
             SessionNonce = 77,
             Sequence = sequence,
             HostTick = 100,
-            LastInputSequence = 90,
+            LastInputSequences = new uint[] { 10, 20, 90, 40 },
+            Flags = WorldSnapshotFlags.GameInProgress | WorldSnapshotFlags.HasCurrentRoom,
             Level = 3,
             RoomX = -12000,
             RoomY = 44000,

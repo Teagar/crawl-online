@@ -81,6 +81,14 @@ namespace CrawlOnline.Determinism
             }
         }
 
+        internal static ulong CalculateRandomStateHash()
+        {
+            var exact = new StableHash64();
+            var quantized = new StableHash64();
+            AddRandomState(ref exact, ref quantized);
+            return exact.Value;
+        }
+
         private static void AddLevel(ref StableHash64 exact, ref StableHash64 quantized)
         {
             try

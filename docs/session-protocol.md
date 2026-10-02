@@ -15,6 +15,10 @@ The host publishes lobby metadata for:
 - mod build version;
 - a cryptographically random per-lobby session nonce.
 
+Joining requires exact packet, session-protocol, and mod-build versions before
+the hello is sent. This prevents two locally valid but wire-incompatible builds
+from beginning gameplay.
+
 The nonce invalidates packets retained from an earlier lobby. It is not a secret
 and is not treated as authentication by itself.
 

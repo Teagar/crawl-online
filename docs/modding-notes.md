@@ -68,6 +68,12 @@ The experimental state hash includes:
   and rigid-body velocity;
 - full Unity random state.
 
+`SystemLevel.GetMonstersSpawned` exposes the current monster objects. Runtime
+snapshots exclude objects already represented by an assigned player slot,
+allocate host-local lifetime IDs for the remainder, and match them on clients by
+a normalized archetype-name hash plus nearest position. Raw names and Unity
+instance IDs are never transmitted or persisted.
+
 Exact IEEE-754 values form the lockstep verdict. A second hash quantizes motion
 to `1e-4` for diagnostics. Object addresses, Unity instance IDs, hash codes,
 enumeration order, locale-formatted numbers, and cosmetic particles are not
