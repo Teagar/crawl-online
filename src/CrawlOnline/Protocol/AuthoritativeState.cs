@@ -54,6 +54,7 @@ namespace CrawlOnline.Protocol
     {
         public uint Id;
         public ulong ArchetypeHash;
+        public byte OwnerSlot;
         public EnemySnapshotFlags Flags;
         public short State;
         public int PositionX;

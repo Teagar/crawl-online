@@ -7,7 +7,7 @@ namespace CrawlOnline.Protocol
         private const uint Magic = 0x434F4E4C;
         private const int SnapshotHeaderSize = 86;
         private const int PlayerSize = 28;
-        private const int EnemySize = 39;
+        private const int EnemySize = 40;
         private const int MaximumEnemies = 256;
         public const int SessionInputPacketSize = 30;
         public const int InputEventPacketSize = 25;
@@ -120,14 +120,15 @@ namespace CrawlOnline.Protocol
                 EnemySnapshot enemy = snapshot.Enemies[i];
                 WriteUInt32(data, offset, enemy.Id);
                 WriteUInt64(data, offset + 4, enemy.ArchetypeHash);
-                data[offset + 12] = (byte)enemy.Flags;
-                WriteInt16(data, offset + 13, enemy.State);
-                WriteInt32(data, offset + 15, enemy.PositionX);
-                WriteInt32(data, offset + 19, enemy.PositionY);
-                WriteInt32(data, offset + 23, enemy.VelocityX);
-                WriteInt32(data, offset + 27, enemy.VelocityY);
-                WriteInt32(data, offset + 31, enemy.HealthCurrent);
-                WriteInt32(data, offset + 35, enemy.HealthMaximum);
+                data[offset + 12] = enemy.OwnerSlot;
+                data[offset + 13] = (byte)enemy.Flags;
+                WriteInt16(data, offset + 14, enemy.State);
+                WriteInt32(data, offset + 16, enemy.PositionX);
+                WriteInt32(data, offset + 20, enemy.PositionY);
+                WriteInt32(data, offset + 24, enemy.VelocityX);
+                WriteInt32(data, offset + 28, enemy.VelocityY);
+                WriteInt32(data, offset + 32, enemy.HealthCurrent);
+                WriteInt32(data, offset + 36, enemy.HealthMaximum);
                 offset += EnemySize;
             }
             return data;
@@ -197,18 +198,21 @@ namespace CrawlOnline.Protocol
                 {
                     Id = ReadUInt32(data, offset),
                     ArchetypeHash = ReadUInt64(data, offset + 4),
-                    Flags = (EnemySnapshotFlags)data[offset + 12],
-                    State = ReadInt16(data, offset + 13),
-                    PositionX = ReadInt32(data, offset + 15),
-                    PositionY = ReadInt32(data, offset + 19),
-                    VelocityX = ReadInt32(data, offset + 23),
-                    VelocityY = ReadInt32(data, offset + 27),
-                    HealthCurrent = ReadInt32(data, offset + 31),
-                    HealthMaximum = ReadInt32(data, offset + 35)
+                    OwnerSlot = data[offset + 12],
+                    Flags = (EnemySnapshotFlags)data[offset + 13],
+                    State = ReadInt16(data, offset + 14),
+                    PositionX = ReadInt32(data, offset + 16),
+                    PositionY = ReadInt32(data, offset + 20),
+                    VelocityX = ReadInt32(data, offset + 24),
+                    VelocityY = ReadInt32(data, offset + 28),
+                    HealthCurrent = ReadInt32(data, offset + 32),
+                    HealthMaximum = ReadInt32(data, offset + 36)
                 };
                 const EnemySnapshotFlags KnownEnemyFlags = EnemySnapshotFlags.Active |
                     EnemySnapshotFlags.Alive | EnemySnapshotFlags.AiControlled;
-                if (enemy.Id == 0 || enemy.ArchetypeHash == 0 || (enemy.Flags & ~KnownEnemyFlags) != 0 ||
+                if (enemy.Id == 0 || enemy.ArchetypeHash == 0 ||
+                    (enemy.OwnerSlot != byte.MaxValue && enemy.OwnerSlot > 3) ||
+                    (enemy.Flags & ~KnownEnemyFlags) != 0 ||
                     (i > 0 && enemy.Id <= previousEnemyId)) return false;
                 decoded.Enemies[i] = enemy;
                 previousEnemyId = enemy.Id;
@@ -252,6 +256,7 @@ namespace CrawlOnline.Protocol
             for (int i = 0; i < enemies.Length; i++)
             {
                 if (enemies[i].Id == 0 || enemies[i].ArchetypeHash == 0 ||
+                    (enemies[i].OwnerSlot != byte.MaxValue && enemies[i].OwnerSlot > 3) ||
                     (i > 0 && enemies[i].Id <= enemies[i - 1].Id))
                     throw new ArgumentException("Enemy snapshots must be sorted by unique non-zero ID and have an archetype.", "enemies");
             }

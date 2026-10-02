@@ -81,6 +81,7 @@ public sealed class AuthoritativeProtocolTests
             {
                 Id = 7,
                 ArchetypeHash = 0x1234567890abcdefUL,
+                OwnerSlot = 2,
                 Flags = EnemySnapshotFlags.Active | EnemySnapshotFlags.Alive | EnemySnapshotFlags.AiControlled,
                 State = 4,
                 PositionX = 500,
@@ -111,6 +112,7 @@ public sealed class AuthoritativeProtocolTests
         Assert.Single(actual.Enemies);
         Assert.Equal(expected.Enemies[0].Id, actual.Enemies[0].Id);
         Assert.Equal(expected.Enemies[0].ArchetypeHash, actual.Enemies[0].ArchetypeHash);
+        Assert.Equal(expected.Enemies[0].OwnerSlot, actual.Enemies[0].OwnerSlot);
         Assert.Equal(expected.Enemies[0].HealthCurrent, actual.Enemies[0].HealthCurrent);
     }
 
@@ -156,6 +158,18 @@ public sealed class AuthoritativeProtocolTests
         {
             new EnemySnapshot { Id = 4, ArchetypeHash = 1 },
             new EnemySnapshot { Id = 4, ArchetypeHash = 2 }
+        };
+
+        Assert.Throws<ArgumentException>(() => AuthoritativeCodec.EncodeSnapshot(snapshot));
+    }
+
+    [Fact]
+    public void SnapshotRejectsInvalidEnemyOwnerSlot()
+    {
+        WorldSnapshot snapshot = Snapshot(1);
+        snapshot.Enemies = new[]
+        {
+            new EnemySnapshot { Id = 4, ArchetypeHash = 1, OwnerSlot = 4 }
         };
 
         Assert.Throws<ArgumentException>(() => AuthoritativeCodec.EncodeSnapshot(snapshot));

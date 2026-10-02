@@ -22,6 +22,7 @@ namespace CrawlOnline.Authoritative
         private readonly bool[] playerLifeRequest = new bool[4];
         private readonly Dictionary<uint, bool> enemyLifeRequests = new Dictionary<uint, bool>();
         private readonly HashSet<uint> enemyDespawnRequests = new HashSet<uint>();
+        private readonly HashSet<uint> enemySpawnRequests = new HashSet<uint>();
         private WorldSnapshot pendingSnapshot;
         private uint tick;
         private readonly uint[] lastInputSequences = new uint[4];
@@ -57,6 +58,7 @@ namespace CrawlOnline.Authoritative
                 Array.Clear(hasPlayerLifeRequest, 0, hasPlayerLifeRequest.Length);
                 enemyLifeRequests.Clear();
                 enemyDespawnRequests.Clear();
+                enemySpawnRequests.Clear();
                 nextEnemyId = 1;
                 hasRequestedTransition = false;
                 requestedHeroSlot = byte.MaxValue;
@@ -363,6 +365,8 @@ namespace CrawlOnline.Authoritative
             List<GameObject> localEnemies = GetMonsterObjects(players);
             if (TryBeginEnemyDespawns(snapshot, players))
                 return RejectMismatch("enemy-despawn-pending");
+            if (localEnemies.Count < snapshot.Enemies.Length && TryBeginEnemySpawns(snapshot, players, localEnemies))
+                return RejectMismatch("enemy-spawn-pending");
             if (localEnemies.Count != snapshot.Enemies.Length)
                 return RejectMismatch("enemy-count:" + localEnemies.Count + "->" + snapshot.Enemies.Length);
             var claimedEnemies = new HashSet<GameObject>();
@@ -377,6 +381,7 @@ namespace CrawlOnline.Authoritative
                     enemy = MatchEnemy(authoritative, localEnemies, claimedEnemies);
                     if (enemy == null) return RejectMismatch("enemy-identity:" + authoritative.Id);
                     clientEnemies[authoritative.Id] = enemy;
+                    enemySpawnRequests.Remove(authoritative.Id);
                 }
                 if (!claimedEnemies.Add(enemy)) return RejectMismatch("enemy-duplicate:" + authoritative.Id);
                 EnemySnapshot local = CaptureEnemy(enemy, authoritative.Id);
@@ -524,8 +529,49 @@ namespace CrawlOnline.Authoritative
                 clientEnemies.Remove(removeMappings[i]);
                 enemyDespawnRequests.Remove(removeMappings[i]);
                 enemyLifeRequests.Remove(removeMappings[i]);
+                enemySpawnRequests.Remove(removeMappings[i]);
             }
             return pending;
+        }
+
+        private bool TryBeginEnemySpawns(WorldSnapshot snapshot, object[] players, List<GameObject> localEnemies)
+        {
+            bool began = false;
+            var availableByArchetype = new Dictionary<ulong, int>();
+            for (int i = 0; i < localEnemies.Count; i++)
+            {
+                ulong hash = ArchetypeHash(localEnemies[i]);
+                int count;
+                availableByArchetype.TryGetValue(hash, out count);
+                availableByArchetype[hash] = count + 1;
+            }
+            for (int i = 0; i < snapshot.Enemies.Length; i++)
+            {
+                EnemySnapshot enemy = snapshot.Enemies[i];
+                GameObject mapped;
+                if (clientEnemies.TryGetValue(enemy.Id, out mapped) && mapped != null) continue;
+                int available;
+                if (availableByArchetype.TryGetValue(enemy.ArchetypeHash, out available) && available > 0)
+                {
+                    availableByArchetype[enemy.ArchetypeHash] = available - 1;
+                    continue;
+                }
+                if (enemy.OwnerSlot == byte.MaxValue || enemySpawnRequests.Contains(enemy.Id)) continue;
+                object owner = FindPlayerBySlot(players, enemy.OwnerSlot);
+                if (owner == null) continue;
+                GameObject prefab = GameApi.Invoke<GameObject>(owner, "GetFodderPrefab");
+                if (prefab == null || ArchetypeHash(prefab) != enemy.ArchetypeHash) continue;
+                object systemLevel = UnityEngine.Object.FindObjectOfType(GameApi.Type("SystemLevel"));
+                if (systemLevel == null) continue;
+                var position = new Vector2(Expand(enemy.PositionX), Expand(enemy.PositionY));
+                bool spawned = (bool)GameApi.InvokeWithArguments(systemLevel, "SpawnMonster", owner, prefab, position, false);
+                if (spawned)
+                {
+                    enemySpawnRequests.Add(enemy.Id);
+                    began = true;
+                }
+            }
+            return began;
         }
 
         private static bool IsAssignedPlayerObject(GameObject gameObject, object[] players)
@@ -573,6 +619,7 @@ namespace CrawlOnline.Authoritative
             {
                 Id = id,
                 ArchetypeHash = ArchetypeHash(gameObject),
+                OwnerSlot = byte.MaxValue,
                 PositionX = Quantize(gameObject.transform.position.x),
                 PositionY = Quantize(gameObject.transform.position.y)
             };
@@ -582,6 +629,13 @@ namespace CrawlOnline.Authoritative
             {
                 snapshot.State = Convert.ToInt16(GameApi.Invoke(player, "GetState"));
                 if (GameApi.Invoke<bool>(player, "GetIsAI")) snapshot.Flags |= EnemySnapshotFlags.AiControlled;
+                object owner = GameApi.Invoke(player, "GetPlayerData");
+                if (owner == null) owner = GameApi.Field<object>(player, "m_spawner");
+                if (owner != null)
+                {
+                    int slot = GameApi.Property<int>(owner, "Id");
+                    if (slot >= 0 && slot <= 3) snapshot.OwnerSlot = (byte)slot;
+                }
             }
             Rigidbody body = gameObject.GetComponent<Rigidbody>();
             if (body != null)

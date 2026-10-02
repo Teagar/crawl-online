@@ -25,8 +25,8 @@ The fixed, versioned snapshot header includes:
 Up to four player records are sorted by unique slot and include role/lifecycle
 flags, gameplay state, quantized position/velocity, and current/maximum health.
 Enemy records use a host-assigned non-zero lifetime ID plus a hashed local
-archetype key, lifecycle flags, gameplay state, quantized position/velocity, and
-health. The codec caps active enemies at 256; the largest legal packet is about
+archetype key, optional owner slot, lifecycle flags, gameplay state, quantized
+position/velocity, and health. The codec caps active enemies at 256; the largest legal packet is about
 10 KiB, below the transport's 64 KiB receive limit.
 
 The schema intentionally excludes Unity instance IDs, raw object names,
@@ -62,6 +62,10 @@ missing, extra, duplicate, or lifecycle-incompatible objects fail closed.
 - Alive/dead corrections use Crawl's public `Health.Suicide` and
   `Health.Resurrect` paths once per target state. A host-removed mapped enemy is
   killed first when needed and only then routed through `Player.Despawn`.
+- When a host fodder lifetime is absent locally, the client resolves its owner
+  slot, obtains that player's legitimate local fodder prefab, verifies the
+  archetype hash, and invokes `SystemLevel.SpawnMonster`. Unknown-owner or
+  archetype-incompatible spawns remain fail-closed.
 - A hero-role mismatch updates the four `PlayerData` hero flags and the
   `SystemPlayers` hero reference as one operation, then invokes Crawl's own
   `OnHeroChange` notification path. The codec rejects snapshots with multiple

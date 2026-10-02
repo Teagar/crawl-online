@@ -12,7 +12,7 @@ namespace CrawlOnline
     {
         private const int Channel = 7;
         private const int MaxPacketSize = 64 * 1024;
-        private const string SessionProtocolVersion = "3";
+        private const string SessionProtocolVersion = "4";
         private const string LobbyPacketProtocolKey = "crawl-online-protocol";
         private const string LobbySessionProtocolKey = "crawl-online-session-protocol";
         private const string LobbyBuildKey = "crawl-online-build";

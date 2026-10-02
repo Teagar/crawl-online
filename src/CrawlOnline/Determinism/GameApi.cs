@@ -48,6 +48,13 @@ namespace CrawlOnline.Determinism
             return AccessTools.Method(instance.GetType(), method).Invoke(instance, new[] { argument });
         }
 
+        public static object InvokeWithArguments(object instance, string method, params object[] arguments)
+        {
+            Type[] types = new Type[arguments.Length];
+            for (int i = 0; i < arguments.Length; i++) types[i] = arguments[i].GetType();
+            return AccessTools.Method(instance.GetType(), method, types).Invoke(instance, arguments);
+        }
+
         public static object InvokeStatic(string type, string method)
         {
             return AccessTools.Method(Type(type), method).Invoke(null, null);
