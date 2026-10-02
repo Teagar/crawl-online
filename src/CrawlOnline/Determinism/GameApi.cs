@@ -78,5 +78,10 @@ namespace CrawlOnline.Determinism
         {
             return (T)AccessTools.Field(instance.GetType(), field).GetValue(instance);
         }
+
+        public static void SetField(object instance, string field, object value)
+        {
+            AccessTools.Field(instance.GetType(), field).SetValue(instance, value);
+        }
     }
 }

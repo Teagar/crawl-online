@@ -53,6 +53,10 @@ missing, extra, duplicate, or lifecycle-incompatible objects fail closed.
 - Alive/dead corrections use Crawl's public `Health.Suicide` and
   `Health.Resurrect` paths once per target state. A host-removed mapped enemy is
   killed first when needed and only then routed through `Player.Despawn`.
+- A hero-role mismatch updates the four `PlayerData` hero flags and the
+  `SystemPlayers` hero reference as one operation, then invokes Crawl's own
+  `OnHeroChange` notification path. The codec rejects snapshots with multiple
+  heroes.
 - Once a snapshot passes preflight and its entity corrections are accepted, the
   client restores Unity's complete four-word RNG state. The hash remains a
   diagnostic; raw reflection field names are not transmitted.

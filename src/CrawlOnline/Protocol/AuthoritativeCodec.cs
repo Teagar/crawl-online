@@ -140,6 +140,7 @@ namespace CrawlOnline.Protocol
             for (int i = 0; i < 4; i++) decoded.RandomStateWords[i] = ReadUInt32(data, 67 + i * 4);
             int offset = SnapshotHeaderSize;
             byte previousSlot = 0;
+            int heroCount = 0;
             for (int i = 0; i < count; i++)
             {
                 PlayerSnapshot player = new PlayerSnapshot
@@ -158,6 +159,7 @@ namespace CrawlOnline.Protocol
                     PlayerSnapshotFlags.Alive | PlayerSnapshotFlags.Bot | PlayerSnapshotFlags.Present;
                 if (player.Slot > 3 || (player.Flags & ~KnownPlayerFlags) != 0 ||
                     (i > 0 && player.Slot <= previousSlot)) return false;
+                if ((player.Flags & PlayerSnapshotFlags.Hero) != 0 && ++heroCount > 1) return false;
                 decoded.Players[i] = player;
                 previousSlot = player.Slot;
                 offset += PlayerSize;
@@ -209,10 +211,13 @@ namespace CrawlOnline.Protocol
 
         private static void ValidatePlayerOrder(PlayerSnapshot[] players)
         {
+            int heroCount = 0;
             for (int i = 0; i < players.Length; i++)
             {
                 if (players[i].Slot > 3 || (i > 0 && players[i].Slot <= players[i - 1].Slot))
                     throw new ArgumentException("Player snapshots must be sorted by unique slot.", "players");
+                if ((players[i].Flags & PlayerSnapshotFlags.Hero) != 0 && ++heroCount > 1)
+                    throw new ArgumentException("A snapshot cannot contain more than one hero.", "players");
             }
         }
 

@@ -31,6 +31,7 @@ namespace CrawlOnline.Authoritative
         private uint nextEnemyId = 1;
         private uint requestedTransitionGeneration;
         private bool hasRequestedTransition;
+        private byte requestedHeroSlot = byte.MaxValue;
 
         public AuthoritativeSynchronizer(SteamLobbySession lobbySession, ManualLogSource logSource)
         {
@@ -53,6 +54,7 @@ namespace CrawlOnline.Authoritative
                 enemyDespawnRequests.Clear();
                 nextEnemyId = 1;
                 hasRequestedTransition = false;
+                requestedHeroSlot = byte.MaxValue;
                 pendingSnapshot = null;
                 return;
             }
@@ -135,10 +137,11 @@ namespace CrawlOnline.Authoritative
             object room = null;
             try { room = GameApi.InvokeStatic("SystemLevel", "GetCurrentRoom"); }
             catch { }
-            if (room != null)
+            Component roomComponent = room as Component;
+            if (roomComponent != null)
             {
                 snapshot.Flags |= WorldSnapshotFlags.HasCurrentRoom;
-                Vector3 roomPosition = ((Component)room).transform.position;
+                Vector3 roomPosition = roomComponent.transform.position;
                 snapshot.RoomX = Quantize(roomPosition.x);
                 snapshot.RoomY = Quantize(roomPosition.y);
                 snapshot.RoomDepth = GameApi.Property<int>(room, "Depth");
@@ -253,12 +256,13 @@ namespace CrawlOnline.Authoritative
             object localRoom = null;
             try { localRoom = GameApi.InvokeStatic("SystemLevel", "GetCurrentRoom"); }
             catch { }
+            Component localRoomComponent = localRoom as Component;
             bool hostHasRoom = (snapshot.Flags & WorldSnapshotFlags.HasCurrentRoom) != 0;
-            if ((localRoom != null) != hostHasRoom)
+            if ((localRoomComponent != null) != hostHasRoom)
                 return RejectMismatch("current-room-presence");
-            if (localRoom != null)
+            if (localRoomComponent != null)
             {
-                Vector3 roomPosition = ((Component)localRoom).transform.position;
+                Vector3 roomPosition = localRoomComponent.transform.position;
                 int roomX = Quantize(roomPosition.x);
                 int roomY = Quantize(roomPosition.y);
                 int roomDepth = GameApi.Property<int>(localRoom, "Depth");
@@ -280,6 +284,8 @@ namespace CrawlOnline.Authoritative
             try { players = GameApi.GetPlayers(); }
             catch { return false; }
 
+            byte localHeroSlot = byte.MaxValue;
+            byte hostHeroSlot = byte.MaxValue;
             for (int i = 0; i < snapshot.Players.Length; i++)
             {
                 PlayerSnapshot authoritative = snapshot.Players[i];
@@ -288,6 +294,8 @@ namespace CrawlOnline.Authoritative
                 PlayerSnapshot local = CapturePlayer(playerData);
                 bool localAlive = (local.Flags & PlayerSnapshotFlags.Alive) != 0;
                 bool hostAlive = (authoritative.Flags & PlayerSnapshotFlags.Alive) != 0;
+                if ((local.Flags & PlayerSnapshotFlags.Hero) != 0) localHeroSlot = authoritative.Slot;
+                if ((authoritative.Flags & PlayerSnapshotFlags.Hero) != 0) hostHeroSlot = authoritative.Slot;
                 if (localAlive != hostAlive)
                 {
                     if (!hasPlayerLifeRequest[authoritative.Slot] ||
@@ -303,13 +311,22 @@ namespace CrawlOnline.Authoritative
                     return RejectMismatch("player-life-transition:" + authoritative.Slot + "->" + hostAlive);
                 }
                 hasPlayerLifeRequest[authoritative.Slot] = false;
-                PlayerSnapshotFlags lifecycle = PlayerSnapshotFlags.Active | PlayerSnapshotFlags.Hero |
-                    PlayerSnapshotFlags.Bot | PlayerSnapshotFlags.Present;
+                PlayerSnapshotFlags lifecycle = PlayerSnapshotFlags.Active | PlayerSnapshotFlags.Bot |
+                    PlayerSnapshotFlags.Present;
                 if ((local.Flags & lifecycle) != (authoritative.Flags & lifecycle))
                     return RejectMismatch("player-lifecycle:" + authoritative.Slot);
                 if (local.HealthMaximum != authoritative.HealthMaximum)
                     return RejectMismatch("player-max-health:" + authoritative.Slot);
             }
+            if (localHeroSlot != hostHeroSlot)
+            {
+                if (hostHeroSlot == byte.MaxValue)
+                    return RejectMismatch("hero-transition-without-authoritative-hero");
+                if (requestedHeroSlot != hostHeroSlot && TryBeginHeroCorrection(players, hostHeroSlot))
+                    requestedHeroSlot = hostHeroSlot;
+                return RejectMismatch("hero-transition:" + localHeroSlot + "->" + hostHeroSlot);
+            }
+            requestedHeroSlot = byte.MaxValue;
 
             List<GameObject> localEnemies = GetMonsterObjects(players);
             if (TryBeginEnemyDespawns(snapshot, players))
@@ -496,6 +513,25 @@ namespace CrawlOnline.Authoritative
             if (component == null) return false;
             if (alive) GameApi.InvokeWithArgument(component, "Resurrect", Math.Max(health, 0.0001f));
             else GameApi.Invoke(component, "Suicide");
+            return true;
+        }
+
+        private static bool TryBeginHeroCorrection(object[] players, byte heroSlot)
+        {
+            object systemPlayers = UnityEngine.Object.FindObjectOfType(GameApi.Type("SystemPlayers"));
+            if (systemPlayers == null) return false;
+            object hero = null;
+            for (int i = 0; i < players.Length; i++)
+            {
+                object player = players[i];
+                if (player == null) continue;
+                bool isHero = GameApi.Property<int>(player, "Id") == heroSlot;
+                GameApi.SetField(player, "m_isHero", isHero);
+                if (isHero) hero = player;
+            }
+            if (hero == null) return false;
+            GameApi.SetField(systemPlayers, "m_hero", hero);
+            GameApi.Invoke(systemPlayers, "OnHeroChange");
             return true;
         }
 

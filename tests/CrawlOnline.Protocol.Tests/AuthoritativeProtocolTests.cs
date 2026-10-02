@@ -105,6 +105,19 @@ public sealed class AuthoritativeProtocolTests
     }
 
     [Fact]
+    public void SnapshotRejectsMultipleHeroes()
+    {
+        WorldSnapshot snapshot = Snapshot(1);
+        snapshot.Players = new[]
+        {
+            new PlayerSnapshot { Slot = 0, Flags = PlayerSnapshotFlags.Hero },
+            new PlayerSnapshot { Slot = 1, Flags = PlayerSnapshotFlags.Hero }
+        };
+
+        Assert.Throws<ArgumentException>(() => AuthoritativeCodec.EncodeSnapshot(snapshot));
+    }
+
+    [Fact]
     public void SnapshotRejectsUnknownWorldFlags()
     {
         byte[] encoded = AuthoritativeCodec.EncodeSnapshot(Snapshot(1));
