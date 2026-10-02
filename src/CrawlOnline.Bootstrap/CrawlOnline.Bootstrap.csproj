@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net35</TargetFramework>
+    <AssemblyName>CrawlOnline</AssemblyName>
+    <RootNamespace>CrawlOnline.Bootstrap</RootNamespace>
+    <CrawlGameDir Condition="'$(CrawlGameDir)' == ''">$(CRAWL_GAME_DIR)</CrawlGameDir>
+    <BepInExRoot Condition="'$(BepInExRoot)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\bepinex</BepInExRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net35" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExRoot)/BepInEx/core/BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(CrawlGameDir)/Crawl_Data/Managed/UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

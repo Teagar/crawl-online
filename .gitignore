@@ -1,0 +1,13 @@
+# Build output
+artifacts/
+bin/
+obj/
+TestResults/
+
+# Local game/runtime paths
+.env
+*.user
+
+# IDE
+.idea/
+.vscode/

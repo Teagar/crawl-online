@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/CrawlOnline/CrawlOnline.csproj" />
+  <Project Path="src/CrawlOnline.Bootstrap/CrawlOnline.Bootstrap.csproj" />
+  <Project Path="tests/CrawlOnline.Protocol.Tests/CrawlOnline.Protocol.Tests.csproj" />
+</Solution>
