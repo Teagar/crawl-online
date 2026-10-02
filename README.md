@@ -68,6 +68,8 @@ See [docs/architecture.md](docs/architecture.md),
 [docs/research.md](docs/research.md). The authenticated lobby handshake is in
 [docs/session-protocol.md](docs/session-protocol.md). Contributor-facing runtime findings are
 collected in [docs/modding-notes.md](docs/modding-notes.md).
+The authoritative state wire format and ordering rules are documented in
+[docs/authoritative-sync.md](docs/authoritative-sync.md).
 
 ## Legal boundary
 

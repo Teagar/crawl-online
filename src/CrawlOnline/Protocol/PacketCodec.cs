@@ -50,8 +50,7 @@ namespace CrawlOnline.Protocol
 
         public static byte[] EncodeControl(PacketType type)
         {
-            if (type == PacketType.Input || type == PacketType.Hello ||
-                type == PacketType.HelloAccepted || type == PacketType.HelloRejected)
+            if (type != PacketType.Disconnect)
             {
                 throw new ArgumentException("This packet type requires a structured payload.", "type");
             }

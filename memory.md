@@ -16,6 +16,7 @@ Deliver an installable Windows/Linux mod that supports internet host/join and a 
 - Steam provides lobby discovery, invitations, identity, NAT traversal, and relay transport; video streaming is outside the product boundary.
 - Session trust is anchored to current Steam lobby membership and transport sender identity. Each lobby uses a random nonce; host slot 0 is authoritative, peers receive slots 1-3 only after a versioned capability handshake, and stale sessions fail closed.
 - Linux and the official Windows binary under Proton both confirm authoritative lobby creation, host slot 0, and leave through F8/F9. A real Windows-Linux peer handshake still requires two simultaneous legitimate Steam identities/machines.
+- Authoritative gameplay packets carry the lobby nonce plus monotonic per-slot input or snapshot sequences. Clients acknowledge applied snapshots; stale, duplicate, wrong-session, and wrong-slot packets are rejected before runtime mutation.
 - Crawl's Unity 5.4 Mono runtime requires BepInEx 5.4.11, .NET 3.5 plugin targets, and a late `SystemSteam.Awake` chainloader entrypoint; newer BepInEx runtime patches fail on this Mono build.
 - The researched Linux `Assembly-CSharp.dll` SHA-256 is `d6f169535cf2123568359550d75fe1a9924948e04d8d0beb2eed7eb187542f84`; the Windows hash is `e93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e`.
 - Crawl's Windows executable is 32-bit and requires the x86 BepInEx/Unity Doorstop package.

@@ -115,6 +115,17 @@ namespace CrawlOnline.Protocol
             return false;
         }
 
+        public ulong[] GetConnectedPeerIds()
+        {
+            var connected = new List<ulong>();
+            foreach (Peer peer in peers.Values)
+            {
+                if (peer.Id != hostId && peer.Connected) connected.Add(peer.Id);
+            }
+            connected.Sort();
+            return connected.ToArray();
+        }
+
         public static bool ValidateAcceptance(SessionAccepted accepted, ulong expectedHostId,
             ulong expectedNonce, uint expectedAttempt)
         {

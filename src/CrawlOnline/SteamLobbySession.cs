@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Collections.Generic;
 using BepInEx.Logging;
 using CrawlOnline.Protocol;
 using Steamworks;
@@ -30,6 +31,13 @@ namespace CrawlOnline
         private ulong sessionNonce;
         private uint localAttempt;
         private byte localSlot = byte.MaxValue;
+        private SequenceWindow receiveWindow;
+        private readonly Dictionary<ulong, uint> peerAcknowledgements = new Dictionary<ulong, uint>();
+        private uint localInputSequence;
+        private uint snapshotSequence;
+
+        public event Action<SessionInputFrame> InputReceived;
+        public event Action<WorldSnapshot> SnapshotReceived;
 
         public SteamLobbySession(ManualLogSource logSource)
         {
@@ -46,6 +54,21 @@ namespace CrawlOnline
         public bool InLobby
         {
             get { return lobbyId != CSteamID.Nil; }
+        }
+
+        public bool IsAuthoritativeHost
+        {
+            get { return InLobby && SteamUser.GetSteamID() == ownerId; }
+        }
+
+        public byte LocalSlot
+        {
+            get { return localSlot; }
+        }
+
+        public ulong SessionNonce
+        {
+            get { return sessionNonce; }
         }
 
         public void Host()
@@ -118,6 +141,41 @@ namespace CrawlOnline
             }
         }
 
+        public bool SendLocalInput(InputFrame input)
+        {
+            if (!InLobby || IsAuthoritativeHost || localSlot == byte.MaxValue || sessionNonce == 0)
+                return false;
+            input.PlayerId = localSlot;
+            localInputSequence++;
+            if (localInputSequence == 0) localInputSequence = 1;
+            var sessionInput = new SessionInputFrame
+            {
+                SessionNonce = sessionNonce,
+                Sequence = localInputSequence,
+                Input = input
+            };
+            return Send(ownerId, AuthoritativeCodec.EncodeInput(sessionInput),
+                EP2PSend.k_EP2PSendUnreliableNoDelay);
+        }
+
+        public bool BroadcastSnapshot(WorldSnapshot snapshot)
+        {
+            if (!IsAuthoritativeHost || roster == null || sessionNonce == 0 || snapshot == null)
+                return false;
+            snapshotSequence++;
+            if (snapshotSequence == 0) snapshotSequence = 1;
+            snapshot.SessionNonce = sessionNonce;
+            snapshot.Sequence = snapshotSequence;
+            byte[] packet = AuthoritativeCodec.EncodeSnapshot(snapshot);
+            ulong[] peers = roster.GetConnectedPeerIds();
+            bool queued = true;
+            for (int i = 0; i < peers.Length; i++)
+            {
+                queued &= Send(new CSteamID(peers[i]), packet, EP2PSend.k_EP2PSendUnreliable);
+            }
+            return queued;
+        }
+
         public void Dispose()
         {
             Leave();
@@ -141,6 +199,7 @@ namespace CrawlOnline
             ownerId = SteamUser.GetSteamID();
             sessionNonce = CreateNonce();
             roster = new SessionRoster(ownerId.m_SteamID, sessionNonce, 4);
+            receiveWindow = new SequenceWindow(sessionNonce);
             localSlot = 0;
             SteamMatchmaking.SetLobbyData(lobbyId, LobbyPacketProtocolKey, PacketCodec.ProtocolVersion.ToString(CultureInfo.InvariantCulture));
             SteamMatchmaking.SetLobbyData(lobbyId, LobbySessionProtocolKey, SessionProtocolVersion);
@@ -180,6 +239,7 @@ namespace CrawlOnline
             }
 
             log.LogInfo("Joined lobby " + lobbyId + ", owner=" + ownerId);
+            receiveWindow = new SequenceWindow(sessionNonce);
             SendHello();
         }
 
@@ -258,6 +318,56 @@ namespace CrawlOnline
                 if (self == ownerId && roster != null) roster.MarkDisconnected(remote.m_SteamID);
                 else if (remote == ownerId) Leave();
             }
+            else if (type == PacketType.SessionInput && self == ownerId && roster != null && receiveWindow != null)
+            {
+                SessionInputFrame input;
+                byte assignedSlot;
+                if (!AuthoritativeCodec.TryDecodeInput(packet, out input) ||
+                    !roster.TryGetSlot(remote.m_SteamID, out assignedSlot) ||
+                    input.Input.PlayerId != assignedSlot || !receiveWindow.TryAcceptInput(input))
+                {
+                    log.LogWarning("Rejected stale or unauthorized input from " + remote);
+                    return;
+                }
+                Action<SessionInputFrame> callback = InputReceived;
+                if (callback != null) callback(input);
+            }
+            else if (type == PacketType.Snapshot && remote == ownerId && self != ownerId &&
+                     localSlot != byte.MaxValue && receiveWindow != null)
+            {
+                WorldSnapshot snapshot;
+                if (!AuthoritativeCodec.TryDecodeSnapshot(packet, out snapshot) ||
+                    !receiveWindow.TryAcceptSnapshot(snapshot))
+                {
+                    log.LogWarning("Rejected stale or invalid authoritative snapshot.");
+                    return;
+                }
+                Action<WorldSnapshot> callback = SnapshotReceived;
+                if (callback != null) callback(snapshot);
+                Send(ownerId, AuthoritativeCodec.EncodeAcknowledgement(new SnapshotAcknowledgement
+                {
+                    SessionNonce = sessionNonce,
+                    Sequence = snapshot.Sequence
+                }), EP2PSend.k_EP2PSendReliable);
+            }
+            else if (type == PacketType.SnapshotAck && self == ownerId && roster != null)
+            {
+                SnapshotAcknowledgement acknowledgement;
+                byte ignoredSlot;
+                if (!AuthoritativeCodec.TryDecodeAcknowledgement(packet, out acknowledgement) ||
+                    acknowledgement.SessionNonce != sessionNonce ||
+                    !roster.TryGetSlot(remote.m_SteamID, out ignoredSlot))
+                {
+                    log.LogWarning("Rejected invalid snapshot acknowledgement from " + remote);
+                    return;
+                }
+                uint previous;
+                if (!peerAcknowledgements.TryGetValue(remote.m_SteamID, out previous) ||
+                    SequenceWindow.IsNewer(acknowledgement.Sequence, previous))
+                {
+                    peerAcknowledgements[remote.m_SteamID] = acknowledgement.Sequence;
+                }
+            }
             else
             {
                 log.LogWarning("Rejected unexpected packet " + type + " from " + remote);
@@ -329,12 +439,14 @@ namespace CrawlOnline
             return false;
         }
 
-        private void Send(CSteamID remote, byte[] data, EP2PSend mode)
+        private bool Send(CSteamID remote, byte[] data, EP2PSend mode)
         {
             if (!SteamNetworking.SendP2PPacket(remote, data, (uint)data.Length, mode, Channel))
             {
                 log.LogError("Failed to queue P2P packet for " + remote);
+                return false;
             }
+            return true;
         }
 
         private void ResetSession()
@@ -345,6 +457,10 @@ namespace CrawlOnline
             sessionNonce = 0;
             localAttempt = 0;
             localSlot = byte.MaxValue;
+            receiveWindow = null;
+            peerAcknowledgements.Clear();
+            localInputSequence = 0;
+            snapshotSequence = 0;
         }
 
         private static ulong CreateNonce()
