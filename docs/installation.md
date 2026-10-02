@@ -7,7 +7,7 @@
 1. Download the `CrawlOnline-<version>.zip` asset from the project's GitHub release
    page. Do **not** unpack or edit DLLs yourself.
 2. Extract the ZIP without changing its contents, then close Crawl and Steam's game process.
-3. Run one command below. The installer verifies the release package hash, the
+3. Run one command below. The installer verifies the plugin hashes recorded inside the release package, the
    BepInEx 5.4.11 download hash, and the installed Crawl gameplay-assembly hash
    before changing files. An unknown game build stops safely; do not bypass that
    check unless you have reviewed the update.

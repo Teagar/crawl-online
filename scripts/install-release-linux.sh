@@ -24,7 +24,20 @@ done
 case "$command" in install|update|uninstall|diagnose) ;; *) usage >&2; exit 2;; esac
 [[ -d "$game_dir" && -x "$game_dir/Crawl.x86_64" ]] || { printf 'Crawl Linux was not found at %s. Use --game-dir.\n' "$game_dir" >&2; exit 1; }
 
-work=""; cleanup() { [[ -n "$work" ]] && rm -rf "$work"; }; trap cleanup EXIT
+work=""; stage=""; backup=""; activation_started=false; activation_complete=false
+cleanup() {
+  if [[ "$activation_started" == true && "$activation_complete" != true ]]; then
+    rm -f "$plugin_dir/CrawlOnline.dll" "$plugin_dir/CrawlOnline.Runtime.dll" "$state"
+    for old in CrawlOnline.dll CrawlOnline.Runtime.dll .crawl-online-install.json; do
+      [[ -e "$backup/$old" ]] && mv "$backup/$old" "$plugin_dir/$old"
+    done
+  fi
+  [[ -n "$stage" ]] && rm -rf "$stage"
+  [[ -n "$backup" ]] && rm -rf "$backup"
+  [[ -n "$work" ]] && rm -rf "$work"
+  return 0
+}
+trap cleanup EXIT
 if [[ -n "$package" ]]; then
   if [[ -d "$package" ]]; then release_dir="$package"; else
     [[ -f "$package" ]] || { printf 'Package not found: %s\n' "$package" >&2; exit 1; }
@@ -62,7 +75,24 @@ if [[ "$command" == uninstall ]]; then
   printf 'Crawl Online removed. BepInEx and every other plugin were preserved.\n'; exit 0
 fi
 if [[ "$command" == diagnose ]]; then
-  [[ -f "$state" ]] && cat "$state" || printf 'Crawl Online is not installed.\n'
+  if [[ -f "$state" ]]; then
+    cat "$state"
+    python3 - "$state" "$plugin_dir" <<'PY'
+import hashlib,json,os,sys
+state,plugin_dir=sys.argv[1:]
+data=json.load(open(state,encoding='utf-8'))
+failed=False
+for name,expected in data.get('plugins',{}).items():
+ path=os.path.join(plugin_dir,name)
+ actual=hashlib.sha256(open(path,'rb').read()).hexdigest() if os.path.isfile(path) else ''
+ ok=actual==expected
+ print(f'{name}: '+('verified' if ok else 'MISSING OR MODIFIED'))
+ failed |= not ok
+if failed: raise SystemExit('Crawl Online plugin integrity check failed.')
+PY
+  else
+    printf 'Crawl Online is not installed.\n'
+  fi
   [[ -f "$game_dir/BepInEx/core/BepInEx.dll" ]] && printf 'BepInEx core: present\n' || printf 'BepInEx core: missing\n'
   exit 0
 fi
@@ -82,9 +112,25 @@ else
   strings "$game_dir/BepInEx/core/BepInEx.dll" | grep -q '5.4.11' || { printf 'Existing BepInEx is not 5.4.11; it was not changed.\n' >&2; exit 1; }
 fi
 mkdir -p "$plugin_dir"
-cp "$release_dir/plugins/CrawlOnline.dll" "$release_dir/plugins/CrawlOnline.Runtime.dll" "$plugin_dir/"
-python3 - "$manifest" > "$state" <<'PY'
+stage="$(mktemp -d "$plugin_dir/.crawl-online-stage.XXXXXX")"
+backup="$(mktemp -d "$plugin_dir/.crawl-online-backup.XXXXXX")"
+cp "$release_dir/plugins/CrawlOnline.dll" "$release_dir/plugins/CrawlOnline.Runtime.dll" "$stage/"
+python3 - "$manifest" > "$stage/.crawl-online-install.json" <<'PY'
 import json,sys
 m=json.load(open(sys.argv[1])); print(json.dumps({'version':m['version'],'plugins':m['plugins']}, indent=2))
 PY
+activation_started=true
+for name in CrawlOnline.dll CrawlOnline.Runtime.dll .crawl-online-install.json; do
+  [[ -e "$plugin_dir/$name" ]] && mv "$plugin_dir/$name" "$backup/$name"
+done
+activated=0
+for name in CrawlOnline.dll CrawlOnline.Runtime.dll .crawl-online-install.json; do
+  mv "$stage/$name" "$plugin_dir/$name"
+  activated=$((activated + 1))
+  if [[ "${CRAWL_ONLINE_TEST_FAIL_AFTER_FIRST_ACTIVATE:-}" == 1 && $activated -eq 1 ]]; then
+    printf 'Injected activation failure for rollback test.\n' >&2
+    exit 97
+  fi
+done
+activation_complete=true
 printf 'Crawl Online installed. Linux Steam launch option (once): ./run_bepinex.sh ./Crawl.x86_64 # %%command%%\n'

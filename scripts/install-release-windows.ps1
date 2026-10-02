@@ -56,7 +56,17 @@ try {
         exit 0
     }
     if ($Command -eq 'diagnose') {
-        if (Test-Path -LiteralPath $State) { Get-Content -Raw -LiteralPath $State } else { Write-Host 'Crawl Online is not installed.' }
+        if (Test-Path -LiteralPath $State) {
+            $installed = Get-Content -Raw -LiteralPath $State | ConvertFrom-Json
+            $failed = $false
+            foreach ($property in $installed.plugins.psobject.Properties) {
+                $file = Join-Path $PluginDir $property.Name
+                $ok = (Test-Path -LiteralPath $file -PathType Leaf) -and ((Get-Sha256 $file) -eq $property.Value)
+                Write-Host "$($property.Name): $(if ($ok) { 'verified' } else { 'MISSING OR MODIFIED' })"
+                if (-not $ok) { $failed = $true }
+            }
+            if ($failed) { throw 'Crawl Online plugin integrity check failed.' }
+        } else { Write-Host 'Crawl Online is not installed.' }
         if (Test-Path -LiteralPath (Join-Path $GameDir 'BepInEx\core\BepInEx.dll')) { Write-Host 'BepInEx core: present' } else { Write-Host 'BepInEx core: missing' }
         exit 0
     }
@@ -66,6 +76,7 @@ try {
     if (-not (Test-Path -LiteralPath $Core)) {
         $entry = $Manifest.bepInEx.'win-x86'
         if (-not $entry.url -or $entry.sha256 -notmatch '^[0-9a-f]{64}$') { throw 'Release manifest lacks a valid BepInEx x86 hash.' }
+        if (-not $TemporaryDirectory) { $TemporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ("crawl-online-" + [guid]::NewGuid()); New-Item -ItemType Directory -Path $TemporaryDirectory | Out-Null }
         $archive = Join-Path $TemporaryDirectory 'bepinex.zip'
         Invoke-WebRequest -Uri $entry.url -OutFile $archive
         if ((Get-Sha256 $archive) -ne $entry.sha256) { throw 'BepInEx download hash mismatch.' }
@@ -74,8 +85,30 @@ try {
         throw 'Existing BepInEx is not 5.4.11; it was not changed.'
     }
     New-Item -ItemType Directory -Force -Path $PluginDir | Out-Null
-    Copy-Item -Force (Join-Path $ReleaseDir 'plugins\CrawlOnline.dll'), (Join-Path $ReleaseDir 'plugins\CrawlOnline.Runtime.dll') -Destination $PluginDir
-    @{ version = $Manifest.version; plugins = $Manifest.plugins } | ConvertTo-Json -Depth 3 | Set-Content -Encoding UTF8 -LiteralPath $State
+    $stage = Join-Path $PluginDir ('.crawl-online-stage-' + [guid]::NewGuid())
+    $backup = Join-Path $PluginDir ('.crawl-online-backup-' + [guid]::NewGuid())
+    New-Item -ItemType Directory -Path $stage, $backup | Out-Null
+    $names = @('CrawlOnline.dll', 'CrawlOnline.Runtime.dll', '.crawl-online-install.json')
+    $activationStarted = $false
+    try {
+        Copy-Item -Force (Join-Path $ReleaseDir 'plugins\CrawlOnline.dll'), (Join-Path $ReleaseDir 'plugins\CrawlOnline.Runtime.dll') -Destination $stage
+        @{ version = $Manifest.version; plugins = $Manifest.plugins } | ConvertTo-Json -Depth 3 | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $stage '.crawl-online-install.json')
+        $activationStarted = $true
+        foreach ($name in $names) { $current = Join-Path $PluginDir $name; if (Test-Path -LiteralPath $current) { Move-Item -LiteralPath $current -Destination (Join-Path $backup $name) } }
+        $activated = 0
+        foreach ($name in $names) {
+            Move-Item -LiteralPath (Join-Path $stage $name) -Destination (Join-Path $PluginDir $name)
+            $activated++
+            if ($env:CRAWL_ONLINE_TEST_FAIL_AFTER_FIRST_ACTIVATE -eq '1' -and $activated -eq 1) { throw 'Injected activation failure for rollback test.' }
+        }
+    } catch {
+        if ($activationStarted) {
+            foreach ($name in $names) { Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath (Join-Path $PluginDir $name); $old = Join-Path $backup $name; if (Test-Path -LiteralPath $old) { Move-Item -LiteralPath $old -Destination (Join-Path $PluginDir $name) } }
+        }
+        throw
+    } finally {
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $stage, $backup
+    }
     Write-Host 'Crawl Online installed. Start Crawl normally through Steam.'
 } finally {
     if ($TemporaryDirectory -and (Test-Path -LiteralPath $TemporaryDirectory)) { Remove-Item -Recurse -Force -LiteralPath $TemporaryDirectory }
