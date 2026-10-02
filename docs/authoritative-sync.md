@@ -50,3 +50,6 @@ missing, extra, duplicate, or lifecycle-incompatible objects fail closed.
   transition generation. Correction waits for that transition to complete.
 - Animation/gameplay-state mismatch does not block motion correction; direct
   private-state mutation is intentionally avoided.
+- Alive/dead corrections use Crawl's public `Health.Suicide` and
+  `Health.Resurrect` paths once per target state. A host-removed mapped enemy is
+  killed first when needed and only then routed through `Player.Despawn`.

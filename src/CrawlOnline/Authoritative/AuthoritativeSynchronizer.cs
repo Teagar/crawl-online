@@ -17,6 +17,10 @@ namespace CrawlOnline.Authoritative
         private readonly AuthoritativeInputBridge inputBridge = new AuthoritativeInputBridge();
         private readonly Dictionary<GameObject, uint> hostEnemyIds = new Dictionary<GameObject, uint>();
         private readonly Dictionary<uint, GameObject> clientEnemies = new Dictionary<uint, GameObject>();
+        private readonly bool[] hasPlayerLifeRequest = new bool[4];
+        private readonly bool[] playerLifeRequest = new bool[4];
+        private readonly Dictionary<uint, bool> enemyLifeRequests = new Dictionary<uint, bool>();
+        private readonly HashSet<uint> enemyDespawnRequests = new HashSet<uint>();
         private WorldSnapshot pendingSnapshot;
         private uint tick;
         private readonly uint[] lastInputSequences = new uint[4];
@@ -44,6 +48,9 @@ namespace CrawlOnline.Authoritative
                 inputBridge.Clear();
                 hostEnemyIds.Clear();
                 clientEnemies.Clear();
+                Array.Clear(hasPlayerLifeRequest, 0, hasPlayerLifeRequest.Length);
+                enemyLifeRequests.Clear();
+                enemyDespawnRequests.Clear();
                 nextEnemyId = 1;
                 hasRequestedTransition = false;
                 pendingSnapshot = null;
@@ -278,8 +285,25 @@ namespace CrawlOnline.Authoritative
                 object playerData = FindPlayerBySlot(players, authoritative.Slot);
                 if (playerData == null) return RejectMismatch("missing-player:" + authoritative.Slot);
                 PlayerSnapshot local = CapturePlayer(playerData);
+                bool localAlive = (local.Flags & PlayerSnapshotFlags.Alive) != 0;
+                bool hostAlive = (authoritative.Flags & PlayerSnapshotFlags.Alive) != 0;
+                if (localAlive != hostAlive)
+                {
+                    if (!hasPlayerLifeRequest[authoritative.Slot] ||
+                        playerLifeRequest[authoritative.Slot] != hostAlive)
+                    {
+                        if (TryBeginLifeCorrection(GameApi.Property<GameObject>(playerData, "GameObject"), hostAlive,
+                                                   Expand(authoritative.HealthCurrent)))
+                        {
+                            hasPlayerLifeRequest[authoritative.Slot] = true;
+                            playerLifeRequest[authoritative.Slot] = hostAlive;
+                        }
+                    }
+                    return RejectMismatch("player-life-transition:" + authoritative.Slot + "->" + hostAlive);
+                }
+                hasPlayerLifeRequest[authoritative.Slot] = false;
                 PlayerSnapshotFlags lifecycle = PlayerSnapshotFlags.Active | PlayerSnapshotFlags.Hero |
-                    PlayerSnapshotFlags.Alive | PlayerSnapshotFlags.Bot | PlayerSnapshotFlags.Present;
+                    PlayerSnapshotFlags.Bot | PlayerSnapshotFlags.Present;
                 if ((local.Flags & lifecycle) != (authoritative.Flags & lifecycle))
                     return RejectMismatch("player-lifecycle:" + authoritative.Slot);
                 if (local.HealthMaximum != authoritative.HealthMaximum)
@@ -287,6 +311,8 @@ namespace CrawlOnline.Authoritative
             }
 
             List<GameObject> localEnemies = GetMonsterObjects(players);
+            if (TryBeginEnemyDespawns(snapshot, players))
+                return RejectMismatch("enemy-despawn-pending");
             if (localEnemies.Count != snapshot.Enemies.Length)
                 return RejectMismatch("enemy-count:" + localEnemies.Count + "->" + snapshot.Enemies.Length);
             var claimedEnemies = new HashSet<GameObject>();
@@ -304,8 +330,27 @@ namespace CrawlOnline.Authoritative
                 }
                 if (!claimedEnemies.Add(enemy)) return RejectMismatch("enemy-duplicate:" + authoritative.Id);
                 EnemySnapshot local = CaptureEnemy(enemy, authoritative.Id);
-                if (local.Flags != authoritative.Flags || local.HealthMaximum != authoritative.HealthMaximum)
+                EnemySnapshotFlags lifecycle = EnemySnapshotFlags.AiControlled;
+                if ((local.Flags & lifecycle) != (authoritative.Flags & lifecycle) ||
+                    local.HealthMaximum != authoritative.HealthMaximum)
                     return RejectMismatch("enemy-lifecycle:" + authoritative.Id);
+                bool localAlive = (local.Flags & EnemySnapshotFlags.Alive) != 0;
+                bool hostAlive = (authoritative.Flags & EnemySnapshotFlags.Alive) != 0;
+                if (localAlive != hostAlive)
+                {
+                    bool requestedTarget;
+                    if (!enemyLifeRequests.TryGetValue(authoritative.Id, out requestedTarget) ||
+                        requestedTarget != hostAlive)
+                    {
+                        if (TryBeginLifeCorrection(enemy, hostAlive, Expand(authoritative.HealthCurrent)))
+                            enemyLifeRequests[authoritative.Id] = hostAlive;
+                    }
+                    return RejectMismatch("enemy-life-transition:" + authoritative.Id + "->" + hostAlive);
+                }
+                enemyLifeRequests.Remove(authoritative.Id);
+                if ((local.Flags & EnemySnapshotFlags.Active) !=
+                    (authoritative.Flags & EnemySnapshotFlags.Active))
+                    return RejectMismatch("enemy-active:" + authoritative.Id);
                 resolvedEnemies[i] = enemy;
             }
 
@@ -389,6 +434,67 @@ namespace CrawlOnline.Authoritative
                 }
             }
             return false;
+        }
+
+        private bool TryBeginEnemyDespawns(WorldSnapshot snapshot, object[] players)
+        {
+            var desired = new HashSet<uint>();
+            for (int i = 0; i < snapshot.Enemies.Length; i++) desired.Add(snapshot.Enemies[i].Id);
+            bool pending = false;
+            var removeMappings = new List<uint>();
+            foreach (KeyValuePair<uint, GameObject> pair in clientEnemies)
+            {
+                if (desired.Contains(pair.Key)) continue;
+                GameObject enemy = pair.Value;
+                if (enemy == null || IsAssignedPlayerObject(enemy, players))
+                {
+                    removeMappings.Add(pair.Key);
+                    continue;
+                }
+                pending = true;
+                Component health = enemy.GetComponent(GameApi.Type("Health"));
+                if (health != null && GameApi.Invoke<bool>(health, "IsAlive"))
+                {
+                    bool requestedAlive;
+                    if (!enemyLifeRequests.TryGetValue(pair.Key, out requestedAlive) || requestedAlive)
+                    {
+                        GameApi.Invoke(health, "Suicide");
+                        enemyLifeRequests[pair.Key] = false;
+                    }
+                }
+                else if (enemyDespawnRequests.Add(pair.Key))
+                {
+                    Component player = enemy.GetComponent(GameApi.Type("Player"));
+                    if (player != null) GameApi.Invoke(player, "Despawn");
+                }
+            }
+            for (int i = 0; i < removeMappings.Count; i++)
+            {
+                clientEnemies.Remove(removeMappings[i]);
+                enemyDespawnRequests.Remove(removeMappings[i]);
+                enemyLifeRequests.Remove(removeMappings[i]);
+            }
+            return pending;
+        }
+
+        private static bool IsAssignedPlayerObject(GameObject gameObject, object[] players)
+        {
+            for (int i = 0; i < players.Length; i++)
+            {
+                if (players[i] != null && GameApi.Property<GameObject>(players[i], "GameObject") == gameObject)
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool TryBeginLifeCorrection(GameObject gameObject, bool alive, float health)
+        {
+            if (gameObject == null) return false;
+            Component component = gameObject.GetComponent(GameApi.Type("Health"));
+            if (component == null) return false;
+            if (alive) GameApi.InvokeWithArgument(component, "Resurrect", Math.Max(health, 0.0001f));
+            else GameApi.Invoke(component, "Suicide");
+            return true;
         }
 
         private static EnemySnapshot CaptureEnemy(GameObject gameObject, uint id)
