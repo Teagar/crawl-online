@@ -451,7 +451,11 @@ namespace CrawlOnline.Authoritative
 
             var enemies = new List<GameObject>();
             IEnumerable spawned;
-            try { spawned = GameApi.InvokeStatic("SystemLevel", "GetMonstersSpawned") as IEnumerable; }
+            try
+            {
+                object systemLevel = UnityEngine.Object.FindObjectOfType(GameApi.Type("SystemLevel"));
+                spawned = systemLevel == null ? null : GameApi.Invoke(systemLevel, "GetMonstersSpawned") as IEnumerable;
+            }
             catch { return enemies; }
             if (spawned == null) return enemies;
             foreach (object item in spawned)
@@ -478,7 +482,9 @@ namespace CrawlOnline.Authoritative
                 if (Quantize(position.x) == snapshot.RoomX && Quantize(position.y) == snapshot.RoomY &&
                     GameApi.Property<int>(room, "Depth") == snapshot.RoomDepth)
                 {
-                    GameApi.InvokeStaticWithArgument("SystemLevel", "OnTeleportToRoom", room);
+                    object systemLevel = UnityEngine.Object.FindObjectOfType(GameApi.Type("SystemLevel"));
+                    if (systemLevel == null) return false;
+                    GameApi.InvokeWithArgument(systemLevel, "OnTeleportToRoom", room);
                     return true;
                 }
                 IEnumerable doors = GameApi.Field<IEnumerable>(room, "m_doors");
