@@ -52,6 +52,11 @@ missing, extra, duplicate, or lifecycle-incompatible objects fail closed.
 - A room mismatch resolves the host's canonical room key against the client's
   generated map and invokes Crawl's own room-transition entry point once per
   transition generation. Correction waits for that transition to complete.
+- Game start/reset mismatches invoke `SystemMain.StartNewGame` or
+  `ResetNewGame` once per target lifecycle. A one-level forward mismatch while
+  in a match reloads the current game scene through `SystemMain.LoadLevel`,
+  allowing Crawl's own level-load pipeline to advance state. Backward or
+  multi-level jumps remain fail-closed.
 - Animation/gameplay-state mismatch does not block motion correction; direct
   private-state mutation is intentionally avoided.
 - Alive/dead corrections use Crawl's public `Health.Suicide` and

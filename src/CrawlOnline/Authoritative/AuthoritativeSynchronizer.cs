@@ -5,6 +5,7 @@ using BepInEx.Logging;
 using CrawlOnline.Determinism;
 using CrawlOnline.Protocol;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace CrawlOnline.Authoritative
 {
@@ -32,6 +33,9 @@ namespace CrawlOnline.Authoritative
         private uint requestedTransitionGeneration;
         private bool hasRequestedTransition;
         private byte requestedHeroSlot = byte.MaxValue;
+        private bool hasRequestedGameLifecycle;
+        private bool requestedGameInProgress;
+        private int requestedLevel = -1;
 
         public AuthoritativeSynchronizer(SteamLobbySession lobbySession, ManualLogSource logSource)
         {
@@ -56,6 +60,8 @@ namespace CrawlOnline.Authoritative
                 nextEnemyId = 1;
                 hasRequestedTransition = false;
                 requestedHeroSlot = byte.MaxValue;
+                hasRequestedGameLifecycle = false;
+                requestedLevel = -1;
                 pendingSnapshot = null;
                 return;
             }
@@ -254,11 +260,30 @@ namespace CrawlOnline.Authoritative
                 localGameInProgress = GameApi.InvokeStatic<bool>("SystemGame", "GetGameInProgress");
             }
             catch { localLevel = -1; }
-            if (localLevel != snapshot.Level)
-                return RejectMismatch("level:" + localLevel + "->" + snapshot.Level);
             bool hostGameInProgress = (snapshot.Flags & WorldSnapshotFlags.GameInProgress) != 0;
             if (localGameInProgress != hostGameInProgress)
+            {
+                if (!hasRequestedGameLifecycle || requestedGameInProgress != hostGameInProgress)
+                {
+                    if (hostGameInProgress) GameApi.InvokeStatic("SystemMain", "StartNewGame");
+                    else GameApi.InvokeStatic("SystemMain", "ResetNewGame");
+                    hasRequestedGameLifecycle = true;
+                    requestedGameInProgress = hostGameInProgress;
+                }
                 return RejectMismatch("game-in-progress:" + localGameInProgress + "->" + hostGameInProgress);
+            }
+            hasRequestedGameLifecycle = false;
+            if (localLevel != snapshot.Level)
+            {
+                if (hostGameInProgress && snapshot.Level == localLevel + 1 && requestedLevel != snapshot.Level)
+                {
+                    GameApi.InvokeStaticWithArgument("SystemMain", "LoadLevel", SceneManager.GetActiveScene().buildIndex);
+                    requestedLevel = snapshot.Level;
+                    return RejectMismatch("level-load-started:" + localLevel + "->" + snapshot.Level);
+                }
+                return RejectMismatch("level:" + localLevel + "->" + snapshot.Level);
+            }
+            requestedLevel = -1;
 
             object localRoom = null;
             try { localRoom = GameApi.InvokeStatic("SystemLevel", "GetCurrentRoom"); }
