@@ -14,7 +14,9 @@ public sealed class PacketCodecTests
             PlayerId = 3,
             MoveX = short.MinValue,
             MoveY = short.MaxValue,
-            Buttons = 0b0000_0111
+            HeldButtons = 0b0000_0111,
+            DownButtons = 0b0000_0010,
+            UpButtons = 0b0000_0100
         };
 
         byte[] encoded = PacketCodec.EncodeInput(expected);

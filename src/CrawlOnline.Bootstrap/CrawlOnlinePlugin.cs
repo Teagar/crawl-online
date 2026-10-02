@@ -20,6 +20,8 @@ namespace CrawlOnline.Bootstrap
         private object runtime;
         private MethodInfo tick;
         private MethodInfo shutdown;
+        private MethodInfo fixedTick;
+        private MethodInfo lateTick;
         private bool waitingLogged;
 
         private void Awake()
@@ -89,6 +91,22 @@ namespace CrawlOnline.Bootstrap
             }
         }
 
+        private void FixedUpdate()
+        {
+            if (runtime != null && fixedTick != null)
+            {
+                fixedTick.Invoke(runtime, null);
+            }
+        }
+
+        private void LateUpdate()
+        {
+            if (runtime != null && lateTick != null)
+            {
+                lateTick.Invoke(runtime, null);
+            }
+        }
+
         private void LoadRuntime()
         {
             try
@@ -99,6 +117,8 @@ namespace CrawlOnline.Bootstrap
                 runtime = Activator.CreateInstance(type, new object[] { Logger });
                 tick = type.GetMethod("Tick", BindingFlags.Public | BindingFlags.Instance);
                 shutdown = type.GetMethod("Shutdown", BindingFlags.Public | BindingFlags.Instance);
+                fixedTick = type.GetMethod("FixedTick", BindingFlags.Public | BindingFlags.Instance);
+                lateTick = type.GetMethod("LateTick", BindingFlags.Public | BindingFlags.Instance);
                 Logger.LogInfo("Runtime loaded after Crawl initialization");
             }
             catch (Exception exception)

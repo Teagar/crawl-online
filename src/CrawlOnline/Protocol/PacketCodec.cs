@@ -5,8 +5,8 @@ namespace CrawlOnline.Protocol
     public static class PacketCodec
     {
         private const uint Magic = 0x434F4E4C; // "CONL"
-        public const byte ProtocolVersion = 1;
-        public const int InputPacketSize = 16;
+        public const byte ProtocolVersion = 2;
+        public const int InputPacketSize = 18;
 
         public static byte[] EncodeInput(InputFrame frame)
         {
@@ -15,10 +15,12 @@ namespace CrawlOnline.Protocol
             data[4] = ProtocolVersion;
             data[5] = (byte)PacketType.Input;
             data[6] = frame.PlayerId;
-            data[7] = frame.Buttons;
-            WriteUInt32(data, 8, frame.Tick);
-            WriteInt16(data, 12, frame.MoveX);
-            WriteInt16(data, 14, frame.MoveY);
+            data[7] = frame.HeldButtons;
+            data[8] = frame.DownButtons;
+            data[9] = frame.UpButtons;
+            WriteUInt32(data, 10, frame.Tick);
+            WriteInt16(data, 14, frame.MoveX);
+            WriteInt16(data, 16, frame.MoveY);
             return data;
         }
 
@@ -34,10 +36,12 @@ namespace CrawlOnline.Protocol
             }
 
             frame.PlayerId = data[6];
-            frame.Buttons = data[7];
-            frame.Tick = ReadUInt32(data, 8);
-            frame.MoveX = ReadInt16(data, 12);
-            frame.MoveY = ReadInt16(data, 14);
+            frame.HeldButtons = data[7];
+            frame.DownButtons = data[8];
+            frame.UpButtons = data[9];
+            frame.Tick = ReadUInt32(data, 10);
+            frame.MoveX = ReadInt16(data, 14);
+            frame.MoveY = ReadInt16(data, 16);
             return true;
         }
 

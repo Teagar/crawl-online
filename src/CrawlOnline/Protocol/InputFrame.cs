@@ -8,7 +8,9 @@ namespace CrawlOnline.Protocol
         public byte PlayerId;
         public short MoveX;
         public short MoveY;
-        public byte Buttons;
+        public byte HeldButtons;
+        public byte DownButtons;
+        public byte UpButtons;
 
         public bool Equals(InputFrame other)
         {
@@ -16,7 +18,9 @@ namespace CrawlOnline.Protocol
                    PlayerId == other.PlayerId &&
                    MoveX == other.MoveX &&
                    MoveY == other.MoveY &&
-                   Buttons == other.Buttons;
+                   HeldButtons == other.HeldButtons &&
+                   DownButtons == other.DownButtons &&
+                   UpButtons == other.UpButtons;
         }
 
         public override bool Equals(object obj)
@@ -32,7 +36,9 @@ namespace CrawlOnline.Protocol
                 hash = (hash * 397) ^ PlayerId;
                 hash = (hash * 397) ^ MoveX;
                 hash = (hash * 397) ^ MoveY;
-                hash = (hash * 397) ^ Buttons;
+                hash = (hash * 397) ^ HeldButtons;
+                hash = (hash * 397) ^ DownButtons;
+                hash = (hash * 397) ^ UpButtons;
                 return hash;
             }
         }

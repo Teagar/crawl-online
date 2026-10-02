@@ -29,13 +29,19 @@ public sealed class TraceCodecTests
     [Fact]
     public void StateHashRoundTrips()
     {
-        var expected = new StateHashRecord { Tick = uint.MaxValue, Hash = ulong.MaxValue - 9 };
+        var expected = new StateHashRecord
+        {
+            Tick = uint.MaxValue,
+            ExactHash = ulong.MaxValue - 9,
+            QuantizedHash = 0x1122334455667788UL
+        };
 
         byte[] encoded = TraceCodec.EncodeStateHash(expected);
 
         Assert.True(TraceCodec.TryDecodeStateHash(encoded, out StateHashRecord actual));
         Assert.Equal(expected.Tick, actual.Tick);
-        Assert.Equal(expected.Hash, actual.Hash);
+        Assert.Equal(expected.ExactHash, actual.ExactHash);
+        Assert.Equal(expected.QuantizedHash, actual.QuantizedHash);
     }
 
     [Fact]
@@ -71,12 +77,34 @@ public sealed class TraceCodecTests
             PlayerCount = 2,
             StateHashInterval = 10
         };
-        var input = new InputFrame { Tick = 3, PlayerId = 1, MoveX = -4, MoveY = 5, Buttons = 2 };
-        var stateHash = new StateHashRecord { Tick = 10, Hash = 0x1122334455667788UL };
+        var input = new InputFrame
+        {
+            Tick = 3,
+            PlayerId = 1,
+            MoveX = -4,
+            MoveY = 5,
+            HeldButtons = 2,
+            DownButtons = 2
+        };
+        var stateHash = new StateHashRecord
+        {
+            Tick = 10,
+            ExactHash = 0x1122334455667788UL,
+            QuantizedHash = 0x8877665544332211UL
+        };
+        var timing = new FrameTimingRecord
+        {
+            Tick = 3,
+            UnityFrameCount = 100,
+            DeltaMicroseconds = 16667,
+            FixedDeltaMicroseconds = 20000,
+            FixedSteps = 1
+        };
 
         using (var writer = new TraceWriter(stream, header, true))
         {
             writer.WriteInput(input);
+            writer.WriteFrameTiming(timing);
             writer.WriteStateHash(stateHash);
         }
 
@@ -89,9 +117,36 @@ public sealed class TraceCodecTests
         Assert.Equal(input, first.Input);
 
         Assert.True(reader.TryRead(out TraceRecord second));
-        Assert.Equal(TraceRecordType.StateHash, second.Type);
-        Assert.Equal(stateHash.Tick, second.StateHash.Tick);
-        Assert.Equal(stateHash.Hash, second.StateHash.Hash);
+        Assert.Equal(TraceRecordType.FrameTiming, second.Type);
+        Assert.Equal(timing.UnityFrameCount, second.FrameTiming.UnityFrameCount);
+        Assert.Equal(timing.FixedSteps, second.FrameTiming.FixedSteps);
+
+        Assert.True(reader.TryRead(out TraceRecord third));
+        Assert.Equal(TraceRecordType.StateHash, third.Type);
+        Assert.Equal(stateHash.Tick, third.StateHash.Tick);
+        Assert.Equal(stateHash.ExactHash, third.StateHash.ExactHash);
+        Assert.Equal(stateHash.QuantizedHash, third.StateHash.QuantizedHash);
+        Assert.False(reader.TryRead(out _));
+    }
+
+    [Fact]
+    public void TraceReaderIgnoresRecordInterruptedByShutdown()
+    {
+        var stream = new MemoryStream();
+        var header = new TraceHeader
+        {
+            RandomSeed = 1,
+            FixedTicksPerSecond = 50,
+            PlayerCount = 1,
+            StateHashInterval = 30
+        };
+        byte[] headerBytes = TraceCodec.EncodeHeader(header);
+        stream.Write(headerBytes);
+        stream.WriteByte((byte)TraceRecordType.StateHash);
+        stream.WriteByte(0x12);
+        stream.Position = 0;
+
+        using var reader = new TraceReader(stream, true);
         Assert.False(reader.TryRead(out _));
     }
 }

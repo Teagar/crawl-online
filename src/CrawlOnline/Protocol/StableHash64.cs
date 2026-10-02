@@ -65,6 +65,20 @@ namespace CrawlOnline.Protocol
             AddInt32((int)scaled);
         }
 
+        public void AddSingleBits(float item)
+        {
+            byte[] bytes = BitConverter.GetBytes(item);
+            if (!BitConverter.IsLittleEndian)
+            {
+                Array.Reverse(bytes);
+            }
+
+            for (int i = 0; i < bytes.Length; i++)
+            {
+                AddByte(bytes[i]);
+            }
+        }
+
         public void AddString(string item)
         {
             if (item == null)

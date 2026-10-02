@@ -6,7 +6,8 @@ namespace CrawlOnline.Protocol
     public enum TraceRecordType : byte
     {
         Input = 1,
-        StateHash = 2
+        StateHash = 2,
+        FrameTiming = 3
     }
 
     public struct TraceRecord
@@ -14,6 +15,7 @@ namespace CrawlOnline.Protocol
         public TraceRecordType Type;
         public InputFrame Input;
         public StateHashRecord StateHash;
+        public FrameTimingRecord FrameTiming;
     }
 
     public sealed class TraceWriter : IDisposable
@@ -42,6 +44,16 @@ namespace CrawlOnline.Protocol
         public void WriteStateHash(StateHashRecord record)
         {
             Write(TraceCodec.EncodeStateHash(record));
+        }
+
+        public void WriteFrameTiming(FrameTimingRecord record)
+        {
+            Write(TraceCodec.EncodeFrameTiming(record));
+        }
+
+        public void Flush()
+        {
+            stream.Flush();
         }
 
         public void Dispose()
@@ -77,7 +89,7 @@ namespace CrawlOnline.Protocol
             TraceHeader parsed;
             if (!TraceCodec.TryDecodeHeader(header, out parsed))
             {
-                throw new InvalidDataException("Invalid Crawl Online trace header.");
+                throw new IOException("Invalid Crawl Online trace header.");
             }
 
             Header = parsed;
@@ -96,10 +108,15 @@ namespace CrawlOnline.Protocol
 
             if (marker == (byte)TraceRecordType.Input)
             {
-                InputFrame input;
-                if (!PacketCodec.TryDecodeInput(ReadExact(PacketCodec.InputPacketSize), out input))
+                byte[] encodedInput;
+                if (!TryReadExact(PacketCodec.InputPacketSize, out encodedInput))
                 {
-                    throw new InvalidDataException("Invalid input trace record.");
+                    return false;
+                }
+                InputFrame input;
+                if (!PacketCodec.TryDecodeInput(encodedInput, out input))
+                {
+                    throw new IOException("Invalid input trace record.");
                 }
 
                 record.Type = TraceRecordType.Input;
@@ -111,12 +128,16 @@ namespace CrawlOnline.Protocol
             {
                 byte[] encoded = new byte[TraceCodec.StateHashRecordSize];
                 encoded[0] = (byte)marker;
-                byte[] remainder = ReadExact(TraceCodec.StateHashRecordSize - 1);
+                byte[] remainder;
+                if (!TryReadExact(TraceCodec.StateHashRecordSize - 1, out remainder))
+                {
+                    return false;
+                }
                 Buffer.BlockCopy(remainder, 0, encoded, 1, remainder.Length);
                 StateHashRecord stateHash;
                 if (!TraceCodec.TryDecodeStateHash(encoded, out stateHash))
                 {
-                    throw new InvalidDataException("Invalid state hash trace record.");
+                    throw new IOException("Invalid state hash trace record.");
                 }
 
                 record.Type = TraceRecordType.StateHash;
@@ -124,7 +145,28 @@ namespace CrawlOnline.Protocol
                 return true;
             }
 
-            throw new InvalidDataException("Unknown trace record type " + marker + ".");
+            if (marker == (byte)TraceRecordType.FrameTiming)
+            {
+                byte[] encoded = new byte[TraceCodec.FrameTimingRecordSize];
+                encoded[0] = (byte)marker;
+                byte[] remainder;
+                if (!TryReadExact(TraceCodec.FrameTimingRecordSize - 1, out remainder))
+                {
+                    return false;
+                }
+                Buffer.BlockCopy(remainder, 0, encoded, 1, remainder.Length);
+                FrameTimingRecord frameTiming;
+                if (!TraceCodec.TryDecodeFrameTiming(encoded, out frameTiming))
+                {
+                    throw new IOException("Invalid frame timing trace record.");
+                }
+
+                record.Type = TraceRecordType.FrameTiming;
+                record.FrameTiming = frameTiming;
+                return true;
+            }
+
+            throw new IOException("Unknown trace record type " + marker + ".");
         }
 
         public void Dispose()
@@ -151,6 +193,23 @@ namespace CrawlOnline.Protocol
             }
 
             return data;
+        }
+
+        private bool TryReadExact(int count, out byte[] data)
+        {
+            data = new byte[count];
+            int offset = 0;
+            while (offset < count)
+            {
+                int read = stream.Read(data, offset, count - offset);
+                if (read == 0)
+                {
+                    data = null;
+                    return false;
+                }
+                offset += read;
+            }
+            return true;
         }
     }
 }

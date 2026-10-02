@@ -1,4 +1,5 @@
 using BepInEx.Logging;
+using CrawlOnline.Determinism;
 using UnityEngine;
 
 namespace CrawlOnline
@@ -8,11 +9,13 @@ namespace CrawlOnline
         public const string Version = "0.1.0";
         private readonly ManualLogSource log;
         private SteamLobbySession session;
+        private DeterminismHarness harness;
 
         public CrawlOnlineRuntime(ManualLogSource logSource)
         {
             log = logSource;
             session = new SteamLobbySession(log);
+            harness = DeterminismHarness.TryCreate(log);
             log.LogInfo("Ready: F8 host, F7 invite, F9 leave");
         }
 
@@ -41,6 +44,21 @@ namespace CrawlOnline
                 session.Dispose();
                 session = null;
             }
+            if (harness != null)
+            {
+                harness.Dispose();
+                harness = null;
+            }
+        }
+
+        public void FixedTick()
+        {
+            if (harness != null) harness.FixedTick();
+        }
+
+        public void LateTick()
+        {
+            if (harness != null) harness.LateTick();
         }
     }
 }

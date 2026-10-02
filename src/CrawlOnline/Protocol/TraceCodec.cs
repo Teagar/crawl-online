@@ -13,16 +13,28 @@ namespace CrawlOnline.Protocol
     public struct StateHashRecord
     {
         public uint Tick;
-        public ulong Hash;
+        public ulong ExactHash;
+        public ulong QuantizedHash;
+    }
+
+    public struct FrameTimingRecord
+    {
+        public uint Tick;
+        public int UnityFrameCount;
+        public uint DeltaMicroseconds;
+        public uint FixedDeltaMicroseconds;
+        public byte FixedSteps;
     }
 
     public static class TraceCodec
     {
         private const uint Magic = 0x52544F43; // "COTR"
-        private const byte Version = 1;
+        private const byte Version = 2;
         private const byte StateHashRecordType = 2;
+        private const byte FrameTimingRecordType = 3;
         public const int HeaderSize = 16;
-        public const int StateHashRecordSize = 13;
+        public const int StateHashRecordSize = 21;
+        public const int FrameTimingRecordSize = 18;
 
         public static byte[] EncodeHeader(TraceHeader header)
         {
@@ -66,7 +78,8 @@ namespace CrawlOnline.Protocol
             byte[] data = new byte[StateHashRecordSize];
             data[0] = StateHashRecordType;
             WriteUInt32(data, 1, record.Tick);
-            WriteUInt64(data, 5, record.Hash);
+            WriteUInt64(data, 5, record.ExactHash);
+            WriteUInt64(data, 13, record.QuantizedHash);
             return data;
         }
 
@@ -79,7 +92,36 @@ namespace CrawlOnline.Protocol
             }
 
             record.Tick = ReadUInt32(data, 1);
-            record.Hash = ReadUInt64(data, 5);
+            record.ExactHash = ReadUInt64(data, 5);
+            record.QuantizedHash = ReadUInt64(data, 13);
+            return true;
+        }
+
+        public static byte[] EncodeFrameTiming(FrameTimingRecord record)
+        {
+            byte[] data = new byte[FrameTimingRecordSize];
+            data[0] = FrameTimingRecordType;
+            WriteUInt32(data, 1, record.Tick);
+            WriteUInt32(data, 5, unchecked((uint)record.UnityFrameCount));
+            WriteUInt32(data, 9, record.DeltaMicroseconds);
+            WriteUInt32(data, 13, record.FixedDeltaMicroseconds);
+            data[17] = record.FixedSteps;
+            return data;
+        }
+
+        public static bool TryDecodeFrameTiming(byte[] data, out FrameTimingRecord record)
+        {
+            record = new FrameTimingRecord();
+            if (data == null || data.Length != FrameTimingRecordSize || data[0] != FrameTimingRecordType)
+            {
+                return false;
+            }
+
+            record.Tick = ReadUInt32(data, 1);
+            record.UnityFrameCount = unchecked((int)ReadUInt32(data, 5));
+            record.DeltaMicroseconds = ReadUInt32(data, 9);
+            record.FixedDeltaMicroseconds = ReadUInt32(data, 13);
+            record.FixedSteps = data[17];
             return true;
         }
 
