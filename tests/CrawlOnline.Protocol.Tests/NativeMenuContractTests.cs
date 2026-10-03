@@ -6,34 +6,6 @@ namespace CrawlOnline.Protocol.Tests;
 public sealed class NativeMenuContractTests
 {
     [Fact]
-    public void NativeAltBackRequiresTheConfirmedMenuConditions()
-    {
-        Assert.True(NativeMenuAltBackContract.ShouldLatch(true, true, true, true));
-    }
-
-    [Theory]
-    [InlineData(false, true, true, true)]
-    [InlineData(true, false, true, true)]
-    [InlineData(true, true, false, true)]
-    [InlineData(true, true, true, false)]
-    public void NativeAltBackFailsClosedWhenAnyConditionIsMissing(bool inputDown, bool isAlt,
-        bool installed, bool submenuOpen)
-    {
-        Assert.False(NativeMenuAltBackContract.ShouldLatch(inputDown, isAlt, installed, submenuOpen));
-    }
-
-    [Fact]
-    public void NativeAltBackLatchCoalescesRepeatedPostfixesAndConsumesOnce()
-    {
-        var latch = new NativeMenuBackLatch();
-
-        Assert.True(latch.TryLatch(true, true, true, true));
-        Assert.True(latch.TryLatch(true, true, true, true));
-        Assert.True(latch.TryConsume());
-        Assert.False(latch.TryConsume());
-    }
-
-    [Fact]
     public void InsertsBeforeAdjacentLibraryAnchor()
     {
         NativeMenuPlan plan = NativeMenuContract.Evaluate(new[]

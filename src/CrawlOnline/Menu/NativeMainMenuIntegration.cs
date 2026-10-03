@@ -218,22 +218,6 @@ namespace CrawlOnline.Menu
             CloseSubmenu();
         }
 
-        // Invoked on a later runtime Tick by the controller-input postfix.
-        public void CloseSubmenuForNativeBack()
-        {
-            CloseSubmenu();
-        }
-
-        public bool IsInstalledMenu(object menu)
-        {
-            return installedMenu != null && ReferenceEquals(installedMenu, menu);
-        }
-
-        public bool IsSubmenuOpen
-        {
-            get { return submenuOpen; }
-        }
-
         public bool CanAcceptExternalJoin
         {
             get
