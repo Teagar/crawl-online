@@ -19,6 +19,7 @@ packager = (root / 'scripts/package-release.sh').read_text()
 auditor = root / 'scripts/audit-release-package.py'
 compatibility_auditor = root / 'scripts/audit-windows-compatibility.py'
 docs = (root / 'docs/installation.md').read_text()
+simulation_docs = (root / 'docs/local-simulation.md').read_text()
 bootstrap_source = (root / 'src/CrawlOnline.Bootstrap/CrawlOnlinePlugin.cs').read_text()
 simulation_source = (root / 'src/CrawlOnline/Development/DevSimulationSession.cs').read_text()
 
@@ -41,6 +42,9 @@ assert '#if CRAWLONLINE_DEV_SIMULATION' in bootstrap_source and '#if CRAWLONLINE
 assert 'SteamMatchmaking.' not in simulation_source and 'SteamNetworking.' not in simulation_source
 assert 'GameApi.' not in simulation_source and 'SystemGame' not in simulation_source
 assert 'multiplayer gameplay end-to-end validated' in docs
+for text in ('HeadlessSessionHarnessTests', '4/4 → 3/4 → 4/4', 'NAT traversal',
+             'native Windows', 'second Steam', 'never calls'):
+    assert text in simulation_docs
 assert '.crawl-online-backup.' in linux and 'activation_started=true' in linux
 assert '.crawl-online-backup-' in windows and '$activationStarted = $true' in windows
 for text in ('Crawl.exe', '--platform', 'win-x86', 'winhttp.dll', 'e93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e'):

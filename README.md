@@ -95,6 +95,9 @@ See [docs/architecture.md](docs/architecture.md),
 collected in [docs/modding-notes.md](docs/modding-notes.md).
 The authoritative state wire format and ordering rules are documented in
 [docs/authoritative-sync.md](docs/authoritative-sync.md).
+The single-machine protocol harness, development-only ghost peers, reproducible
+seeds and explicit non-coverage are documented in
+[docs/local-simulation.md](docs/local-simulation.md).
 
 ## Legal boundary
 

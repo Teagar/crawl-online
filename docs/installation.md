@@ -114,6 +114,11 @@ The compatibility gate can also be run directly on local build outputs with
 `scripts/audit-windows-compatibility.py`. It verifies static compatibility with
 the 32-bit Windows host; it does not replace execution on native Windows.
 
+Development builds compiled with local simulation support are intentionally
+invalid release inputs and are rejected by the package auditor. See
+[the local simulation guide](local-simulation.md); never upload or distribute
+those assemblies.
+
 For example, `v0.2.0-alpha.1` is a local candidate name only until a human
 reviews it and publishes it. Creating a package never creates a Git tag or
 GitHub release, and is not evidence of remote multiplayer validation.
