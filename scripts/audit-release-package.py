@@ -6,6 +6,8 @@ import sys
 import zipfile
 from pathlib import PurePosixPath
 
+from windows_compatibility import CompatibilityError, inspect_managed_pe
+
 
 def fail(message):
     raise SystemExit("release audit failed: " + message)
@@ -60,6 +62,10 @@ for name, expected_hash in plugins.items():
     actual_hash = hashlib.sha256(files["plugins/" + name]).hexdigest()
     if expected_hash != actual_hash:
         fail("plugin hash mismatch: " + name)
+    try:
+        inspect_managed_pe(files["plugins/" + name], name)
+    except CompatibilityError as error:
+        fail("Windows compatibility: " + str(error))
 
 bepinex = manifest.get("bepInEx")
 if not isinstance(bepinex, dict) or bepinex.get("version") != "5.4.11.0":

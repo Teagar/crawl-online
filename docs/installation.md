@@ -101,12 +101,18 @@ want its loader.
 
 Build first, then create the release ZIP and its checksum without including Crawl,
 Steam, or BepInEx files. Packaging performs a fail-closed allowlist audit of the
-ZIP, manifest, and plugin hashes before writing its checksum:
+ZIP, manifest, plugin hashes, project targets, restored dependencies, and PE/CLR
+headers before writing its checksum. Both plugins must remain PE32 i386, IL-only,
+target `.NET Framework 3.5`, and identify the CLR 2.0–3.5 runtime:
 
 ```bash
 dotnet build -c Release
 ./scripts/package-release.sh <version> /path/BepInEx_unix_5.4.11.0.zip /path/BepInEx_x86_5.4.11.0.zip
 ```
+
+The compatibility gate can also be run directly on local build outputs with
+`scripts/audit-windows-compatibility.py`. It verifies static compatibility with
+the 32-bit Windows host; it does not replace execution on native Windows.
 
 For example, `v0.2.0-alpha.1` is a local candidate name only until a human
 reviews it and publishes it. Creating a package never creates a Git tag or

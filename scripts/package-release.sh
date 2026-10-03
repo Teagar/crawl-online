@@ -16,6 +16,12 @@ for file in "$BOOTSTRAP" "$RUNTIME" "$LINUX_BEPINEX" "$WINDOWS_BEPINEX"; do
 done
 [[ "$VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]] || { printf 'Invalid version: %s\n' "$VERSION" >&2; exit 2; }
 
+python3 "$ROOT/scripts/audit-windows-compatibility.py" \
+  --project "$ROOT/src/CrawlOnline.Bootstrap/CrawlOnline.Bootstrap.csproj" \
+  --project "$ROOT/src/CrawlOnline/CrawlOnline.csproj" \
+  --assembly "$BOOTSTRAP" \
+  --assembly "$RUNTIME"
+
 rm -rf "$STAGE"
 mkdir -p "$STAGE/plugins"
 cp "$BOOTSTRAP" "$RUNTIME" "$STAGE/plugins/"

@@ -17,6 +17,7 @@ windows_diagnostics_test = (root / 'scripts/tests/test_windows_diagnostics.ps1')
 windows_installer_test = (root / 'scripts/tests/test_windows_installer.ps1').read_text()
 packager = (root / 'scripts/package-release.sh').read_text()
 auditor = root / 'scripts/audit-release-package.py'
+compatibility_auditor = root / 'scripts/audit-windows-compatibility.py'
 docs = (root / 'docs/installation.md').read_text()
 bootstrap_source = (root / 'src/CrawlOnline.Bootstrap/CrawlOnlinePlugin.cs').read_text()
 
@@ -65,11 +66,46 @@ def windows_executable(machine: int = 0x14C) -> bytes:
     data[132:134] = machine.to_bytes(2, 'little')
     return bytes(data)
 
+
+def managed_pe(machine: int = 0x14C, clr_flags: int = 1, runtime: bytes = b'v2.0.50727\0') -> bytes:
+    data = bytearray(1024)
+    data[:2] = b'MZ'
+    data[60:64] = (128).to_bytes(4, 'little')
+    data[128:132] = b'PE\0\0'
+    data[132:134] = machine.to_bytes(2, 'little')
+    data[134:136] = (1).to_bytes(2, 'little')
+    data[148:150] = (224).to_bytes(2, 'little')
+    optional = 152
+    data[optional:optional + 2] = (0x10B).to_bytes(2, 'little')
+    data[optional + 92:optional + 96] = (16).to_bytes(4, 'little')
+    data[optional + 96 + 14 * 8:optional + 100 + 14 * 8] = (0x2000).to_bytes(4, 'little')
+    data[optional + 100 + 14 * 8:optional + 104 + 14 * 8] = (72).to_bytes(4, 'little')
+    section = optional + 224
+    data[section:section + 8] = b'.text\0\0\0'
+    data[section + 8:section + 12] = (512).to_bytes(4, 'little')
+    data[section + 12:section + 16] = (0x2000).to_bytes(4, 'little')
+    data[section + 16:section + 20] = (512).to_bytes(4, 'little')
+    data[section + 20:section + 24] = (512).to_bytes(4, 'little')
+    clr = 512
+    data[clr:clr + 4] = (72).to_bytes(4, 'little')
+    data[clr + 4:clr + 8] = bytes((2, 0, 5, 0))
+    data[clr + 8:clr + 12] = (0x2080).to_bytes(4, 'little')
+    data[clr + 12:clr + 16] = (128).to_bytes(4, 'little')
+    data[clr + 16:clr + 20] = clr_flags.to_bytes(4, 'little')
+    metadata = 640
+    data[metadata:metadata + 4] = (0x424A5342).to_bytes(4, 'little')
+    data[metadata + 4:metadata + 8] = bytes((1, 0, 1, 0))
+    data[metadata + 12:metadata + 16] = len(runtime).to_bytes(4, 'little')
+    data[metadata + 16:metadata + 16 + len(runtime)] = runtime
+    return bytes(data)
+
 with tempfile.TemporaryDirectory() as temp:
     temp = Path(temp)
     bootstrap, runtime = temp / 'CrawlOnline.dll', temp / 'CrawlOnline.Runtime.dll'
     linux_loader, windows_loader = temp / 'linux.zip', temp / 'windows.zip'
-    bootstrap.write_bytes(b'bootstrap'); runtime.write_bytes(b'runtime')
+    bootstrap_bytes = managed_pe()
+    runtime_bytes = managed_pe()
+    bootstrap.write_bytes(bootstrap_bytes); runtime.write_bytes(runtime_bytes)
     with zipfile.ZipFile(linux_loader, 'w') as archive:
         archive.writestr('BepInEx/core/BepInEx.dll', b'BepInEx 5.4.11 Linux fixture')
         archive.writestr('run_bepinex.sh', '#!/bin/sh\n')
@@ -89,13 +125,68 @@ with tempfile.TemporaryDirectory() as temp:
     assert 'CrawlOnline-test-1/WINDOWS-VALIDATION.md' in names
     assert 'CrawlOnline-test-1/collect-diagnostics-windows.ps1' in names
     assert not any(name.endswith(('Assembly-CSharp.dll', 'steam_api.dll', 'Crawl.exe')) for name in names)
-    assert manifest['plugins']['CrawlOnline.dll'] == hashlib.sha256(b'bootstrap').hexdigest()
+    assert manifest['plugins']['CrawlOnline.dll'] == hashlib.sha256(bootstrap_bytes).hexdigest()
     assert manifest['bepInEx']['linux-x64']['sha256'] == hashlib.sha256(linux_loader.read_bytes()).hexdigest()
     subprocess.run([str(auditor), str(archive), 'test-1'], check=True, stdout=subprocess.PIPE, text=True)
+
+    incompatible_archive = output / 'CrawlOnline-test-1-incompatible.zip'
+    with zipfile.ZipFile(archive) as source, zipfile.ZipFile(incompatible_archive, 'w') as destination:
+        incompatible_plugin = managed_pe(machine=0x8664)
+        incompatible_manifest = dict(manifest)
+        incompatible_manifest['plugins'] = dict(manifest['plugins'])
+        incompatible_manifest['plugins']['CrawlOnline.Runtime.dll'] = hashlib.sha256(incompatible_plugin).hexdigest()
+        for info in source.infolist():
+            payload = source.read(info)
+            if info.filename.endswith('/plugins/CrawlOnline.Runtime.dll'):
+                payload = incompatible_plugin
+            elif info.filename.endswith('/CrawlOnline.release.json'):
+                payload = json.dumps(incompatible_manifest).encode()
+            destination.writestr(info, payload)
+    incompatible_audit = subprocess.run([str(auditor), str(incompatible_archive), 'test-1'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert incompatible_audit.returncode != 0 and 'Windows compatibility' in incompatible_audit.stderr
+
     with zipfile.ZipFile(archive, 'a') as mutated:
         mutated.writestr('CrawlOnline-test-1/proprietary.dll', b'never redistribute')
     audit = subprocess.run([str(auditor), str(archive), 'test-1'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert audit.returncode != 0 and 'unexpected package contents' in audit.stderr
+
+    invalid_assemblies = {
+        'x64': managed_pe(machine=0x8664),
+        'native': windows_executable(),
+        'mixed-mode': managed_pe(clr_flags=0),
+        'native-entrypoint': managed_pe(clr_flags=0x11),
+        'modern-runtime': managed_pe(runtime=b'v4.0.30319\0'),
+    }
+    for label, payload in invalid_assemblies.items():
+        invalid_assembly = temp / f'{label}.dll'
+        invalid_assembly.write_bytes(payload)
+        compatibility = subprocess.run([
+            'python3', str(compatibility_auditor),
+            '--project', str(root / 'src/CrawlOnline.Bootstrap/CrawlOnline.Bootstrap.csproj'),
+            '--assembly', str(invalid_assembly),
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        assert compatibility.returncode != 0, label
+
+    compatibility = subprocess.run([
+        'python3', str(compatibility_auditor),
+        '--project', str(root / 'src/CrawlOnline.Bootstrap/CrawlOnline.Bootstrap.csproj'),
+        '--project', str(root / 'src/CrawlOnline/CrawlOnline.csproj'),
+        '--assembly', str(bootstrap), '--assembly', str(runtime),
+    ], check=True, stdout=subprocess.PIPE, text=True)
+    compatibility_report = json.loads(compatibility.stdout)
+    assert all(item['target'] == 'net35' for item in compatibility_report['projects'])
+    assert all(item['machine'] == 'i386' and item['ilOnly'] for item in compatibility_report['assemblies'])
+
+    incompatible_project = temp / 'Incompatible.csproj'
+    incompatible_project.write_text('''<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+  <ItemGroup><PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net35" Version="1.0.3" PrivateAssets="all" /></ItemGroup>
+</Project>''')
+    incompatible_project_result = subprocess.run([
+        'python3', str(compatibility_auditor), '--project', str(incompatible_project),
+        '--assembly', str(bootstrap),
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert incompatible_project_result.returncode != 0 and 'target framework must be exactly net35' in incompatible_project_result.stderr
 
     game = temp / 'game'
     (game / 'Crawl_Data/Managed').mkdir(parents=True)
@@ -145,8 +236,8 @@ with tempfile.TemporaryDirectory() as temp:
         },
     }))
     subprocess.run([str(installer), 'update', '--package', str(release_dir), *common], check=True, stdout=subprocess.PIPE, text=True)
-    assert bootstrap_installed.read_bytes() == b'bootstrap'
-    assert installed.read_bytes() == b'runtime'
+    assert bootstrap_installed.read_bytes() == bootstrap_bytes
+    assert installed.read_bytes() == runtime_bytes
     assert json.loads(state_path.read_text())['version'] == 'test-1'
     assert (game / 'BepInEx/plugins/OtherMod/keep.txt').read_text() == 'keep'
 
