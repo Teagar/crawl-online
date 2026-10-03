@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Collections.Generic;
 using BepInEx.Logging;
+using CrawlOnline.Online;
 using CrawlOnline.Protocol;
 using Steamworks;
 
@@ -21,6 +22,7 @@ namespace CrawlOnline
         private readonly byte[] receiveBuffer = new byte[MaxPacketSize];
         private readonly CallResult<LobbyCreated_t> lobbyCreated;
         private readonly CallResult<LobbyEnter_t> lobbyEntered;
+        private readonly CallResult<LobbyMatchList_t> lobbyMatches;
         private readonly Callback<GameLobbyJoinRequested_t> joinRequested;
         private readonly Callback<P2PSessionRequest_t> sessionRequested;
         private readonly Callback<P2PSessionConnectFail_t> sessionConnectFailed;
@@ -40,16 +42,22 @@ namespace CrawlOnline
         private SessionHudStatus hudStatus = SessionHudStatus.Offline;
         private string hudMessage = "Offline — F8 creates a friends-only lobby.";
         private bool cancelPendingHost;
+        private bool cancelPendingJoin;
+        private bool joinPending;
+        private long discoveryOperation;
 
         public event Action<SessionInputFrame> InputReceived;
         public event Action<SessionInputFrame> InputEventReceived;
         public event Action<WorldSnapshot> SnapshotReceived;
+        public event Action<long, ulong[]> FriendLobbiesDiscovered;
+        public event Action<ulong> LobbyJoinRequested;
 
         public SteamLobbySession(ManualLogSource logSource)
         {
             log = logSource;
             lobbyCreated = CallResult<LobbyCreated_t>.Create(OnLobbyCreated);
             lobbyEntered = CallResult<LobbyEnter_t>.Create(OnLobbyEntered);
+            lobbyMatches = CallResult<LobbyMatchList_t>.Create(OnLobbyMatchList);
             joinRequested = Callback<GameLobbyJoinRequested_t>.Create(OnJoinRequested);
             sessionRequested = Callback<P2PSessionRequest_t>.Create(OnSessionRequested);
             sessionConnectFailed = Callback<P2PSessionConnectFail_t>.Create(OnSessionConnectFailed);
@@ -148,6 +156,52 @@ namespace CrawlOnline
 
             SteamFriends.ActivateGameOverlayInviteDialog(lobbyId);
             log.LogInfo("Opened Steam invite dialog for lobby " + lobbyId + ".");
+        }
+
+        public void DiscoverFriendLobbies(long operation)
+        {
+            if (InLobby)
+            {
+                log.LogWarning("Leave the current lobby before looking for a friend.");
+                return;
+            }
+            discoveryOperation = operation;
+            SteamMatchmaking.AddRequestLobbyListStringFilter(LobbyPacketProtocolKey,
+                PacketCodec.ProtocolVersion.ToString(CultureInfo.InvariantCulture),
+                ELobbyComparison.k_ELobbyComparisonEqual);
+            SteamMatchmaking.AddRequestLobbyListStringFilter(LobbySessionProtocolKey,
+                SessionProtocolVersion, ELobbyComparison.k_ELobbyComparisonEqual);
+            SteamMatchmaking.AddRequestLobbyListStringFilter(LobbyBuildKey,
+                CrawlOnlineRuntime.Version, ELobbyComparison.k_ELobbyComparisonEqual);
+            SteamMatchmaking.AddRequestLobbyListFilterSlotsAvailable(1);
+            SteamMatchmaking.AddRequestLobbyListResultCountFilter(20);
+            SetHudStatus(SessionHudStatus.Offline, "Looking for compatible friend lobbies…");
+            lobbyMatches.Set(SteamMatchmaking.RequestLobbyList());
+            log.LogInfo("Searching Steam for compatible friend lobbies.");
+        }
+
+        public void JoinDiscoveredLobby(ulong discoveredLobby, long operation)
+        {
+            if (discoveredLobby == 0 || InLobby) return;
+            discoveryOperation = operation;
+            cancelPendingJoin = false;
+            joinPending = true;
+            SetHudStatus(SessionHudStatus.Offline, "Joining friend lobby…");
+            lobbyEntered.Set(SteamMatchmaking.JoinLobby(new CSteamID(discoveredLobby)));
+        }
+
+        public void CancelJoinOrLeave()
+        {
+            lobbyMatches.Cancel();
+            discoveryOperation = 0;
+            if (!InLobby && joinPending)
+            {
+                cancelPendingJoin = true;
+                SetHudStatus(SessionHudStatus.Authenticating, "Cancelling lobby entry…");
+                return;
+            }
+            Leave();
+            if (!InLobby) SetHudStatus(SessionHudStatus.Offline, "Offline — F8 creates a friends-only lobby.");
         }
 
         public void Leave()
@@ -270,6 +324,7 @@ namespace CrawlOnline
             Leave();
             lobbyCreated.Cancel();
             lobbyEntered.Cancel();
+            lobbyMatches.Cancel();
             joinRequested.Unregister();
             sessionRequested.Unregister();
             sessionConnectFailed.Unregister();
@@ -313,16 +368,53 @@ namespace CrawlOnline
             SetHudStatus(SessionHudStatus.WaitingForPeers, "Lobby ready — F7 invites friends.");
         }
 
+        private void OnLobbyMatchList(LobbyMatchList_t result, bool ioFailure)
+        {
+            long operation = discoveryOperation;
+            if (operation == 0) return;
+            if (ioFailure)
+            {
+                SetHudStatus(SessionHudStatus.Error, "Steam friend-lobby search failed. Try again.");
+                Action<long, ulong[]> failed = FriendLobbiesDiscovered;
+                if (failed != null) failed(operation, new ulong[0]);
+                return;
+            }
+
+            var candidates = new List<ulong>();
+            for (int i = 0; i < result.m_nLobbiesMatching; i++)
+            {
+                CSteamID candidate = SteamMatchmaking.GetLobbyByIndex(i);
+                CSteamID owner = SteamMatchmaking.GetLobbyOwner(candidate);
+                if (candidate != CSteamID.Nil && owner != CSteamID.Nil &&
+                    SteamFriends.HasFriend(owner, EFriendFlags.k_EFriendFlagImmediate))
+                    candidates.Add(candidate.m_SteamID);
+            }
+            ulong[] normalized = FriendLobbyList.Normalize(candidates.ToArray(), 3);
+            SetHudStatus(SessionHudStatus.Offline, normalized.Length == 0
+                ? "No compatible friend lobby found. Ask a friend for an invite."
+                : normalized.Length + " compatible friend lobby(s) found.");
+            Action<long, ulong[]> callback = FriendLobbiesDiscovered;
+            if (callback != null) callback(operation, normalized);
+        }
+
         private void OnJoinRequested(GameLobbyJoinRequested_t request)
         {
-            if (InLobby) Leave();
-            log.LogInfo("Joining invited lobby " + request.m_steamIDLobby);
-            SetHudStatus(SessionHudStatus.Authenticating, "Joining invited lobby…");
-            lobbyEntered.Set(SteamMatchmaking.JoinLobby(request.m_steamIDLobby));
+            Action<ulong> callback = LobbyJoinRequested;
+            if (callback != null) callback(request.m_steamIDLobby.m_SteamID);
         }
 
         private void OnLobbyEntered(LobbyEnter_t result, bool ioFailure)
         {
+            joinPending = false;
+            if (cancelPendingJoin)
+            {
+                cancelPendingJoin = false;
+                if (!ioFailure && result.m_EChatRoomEnterResponse ==
+                    (uint)EChatRoomEnterResponse.k_EChatRoomEnterResponseSuccess)
+                    SteamMatchmaking.LeaveLobby(new CSteamID(result.m_ulSteamIDLobby));
+                ResetSession();
+                return;
+            }
             if (ioFailure || result.m_EChatRoomEnterResponse != (uint)EChatRoomEnterResponse.k_EChatRoomEnterResponseSuccess)
             {
                 log.LogError("Lobby join failed: response=" + result.m_EChatRoomEnterResponse + ", IO failure=" + ioFailure);
@@ -593,6 +685,9 @@ namespace CrawlOnline
             localInputEventSequence = 0;
             snapshotSequence = 0;
             cancelPendingHost = false;
+            cancelPendingJoin = false;
+            joinPending = false;
+            discoveryOperation = 0;
             if (hudStatus != SessionHudStatus.Error)
                 SetHudStatus(SessionHudStatus.Offline, "Offline — F8 creates a friends-only lobby.");
         }

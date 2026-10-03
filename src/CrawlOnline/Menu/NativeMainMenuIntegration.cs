@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Reflection;
 using BepInEx.Logging;
+using CrawlOnline.Online;
 using HarmonyLib;
 using UnityEngine;
 
@@ -17,6 +18,8 @@ namespace CrawlOnline.Menu
         private readonly Action backSelected;
         private readonly Action inviteSelected;
         private readonly Action cancelSelected;
+        private readonly Action refreshSelected;
+        private readonly Action<int> friendSelected;
         private readonly Type menuMainType;
         private int framesUntilScan;
         private object installedMenu;
@@ -26,7 +29,7 @@ namespace CrawlOnline.Menu
 
         public NativeMainMenuIntegration(ManualLogSource logSource, Func<bool> selectedCallback,
             Action hostCallback, Action joinCallback, Action backCallback, Action inviteCallback,
-            Action cancelCallback)
+            Action cancelCallback, Action refreshCallback, Action<int> friendCallback)
         {
             log = logSource;
             selected = selectedCallback;
@@ -35,6 +38,8 @@ namespace CrawlOnline.Menu
             backSelected = backCallback;
             inviteSelected = inviteCallback;
             cancelSelected = cancelCallback;
+            refreshSelected = refreshCallback;
+            friendSelected = friendCallback;
             menuMainType = AccessTools.TypeByName("MenuMain");
         }
 
@@ -182,6 +187,7 @@ namespace CrawlOnline.Menu
             bridge = existing == null ? owner.AddComponent<MainMenuOnlineBridge>() : existing;
             bridge.Initialise(OpenSubmenu, OnHostSelected, OnJoinSelected, CloseSubmenu,
                 OnInviteSelected, OnCancelSelected);
+            bridge.InitialiseJoin(OnRefreshSelected, OnFriendSelected);
         }
 
         public void ShowHostWaiting()
@@ -210,6 +216,84 @@ namespace CrawlOnline.Menu
         public void CloseSessionMenu()
         {
             CloseSubmenu();
+        }
+
+        public bool CanAcceptExternalJoin
+        {
+            get
+            {
+                var component = installedMenu as Component;
+                if (component == null || component.gameObject == null ||
+                    !component.gameObject.activeInHierarchy) return false;
+                try
+                {
+                    object active = ReadRequiredField(installedMenu.GetType(), installedMenu, "m_active");
+                    return active is bool && (bool)active;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+        }
+
+        public bool OpenForExternalJoin()
+        {
+            if (!submenuOpen) OpenSubmenu();
+            return submenuOpen;
+        }
+
+        public void ShowFriendSearch()
+        {
+            ReplaceJoinMenu(new[] { "SEARCHING...", "BACK" },
+                new[] { "MsgCrawlOnlineNoop", "MsgCrawlOnlineCancel" }, 0);
+        }
+
+        public void ShowFriendLobbies(int count)
+        {
+            FriendLobbyMenuPlan plan = FriendLobbyMenuPlan.Create(count);
+            ReplaceJoinMenu(plan.Labels, plan.Messages, plan.SelectedIndex);
+        }
+
+        public void ShowFriendSearchError()
+        {
+            ReplaceJoinMenu(new[] { "SEARCH FAILED", "RETRY", "BACK" },
+                new[] { "MsgCrawlOnlineNoop", "MsgCrawlOnlineRefresh", "MsgCrawlOnlineCancel" }, 1);
+        }
+
+        public void ShowFriendJoining()
+        {
+            ReplaceJoinMenu(new[] { "JOINING...", "BACK" },
+                new[] { "MsgCrawlOnlineNoop", "MsgCrawlOnlineCancel" }, 0);
+        }
+
+        public void ShowFriendConnected()
+        {
+            ReplaceJoinMenu(new[] { "CONNECTED", "LEAVE" },
+                new[] { "MsgCrawlOnlineNoop", "MsgCrawlOnlineCancel" }, 1);
+        }
+
+        private void ReplaceJoinMenu(string[] labels, string[] messages, int selectedIndex)
+        {
+            if (!submenuOpen || installedMenu == null || labels == null || messages == null ||
+                labels.Length != messages.Length) return;
+            try
+            {
+                IList data = ReadRequiredField(installedMenu.GetType(), installedMenu, "m_itemsData") as IList;
+                GameObject owner = ReadRequiredField(installedMenu.GetType(), installedMenu, "m_owner") as GameObject;
+                if (data == null || data.Count < 2 || owner == null)
+                    throw new InvalidOperationException("Main-menu template is unavailable");
+                RemoveAllRenderedItems(installedMenu);
+                for (int i = 0; i < labels.Length; i++)
+                    InsertRenderedItem(installedMenu, i, data[Math.Min(i, 1)], labels[i], messages[i], owner);
+                SetMenuActive(installedMenu);
+                SetSelectedItem(installedMenu, selectedIndex);
+            }
+            catch (Exception exception)
+            {
+                WarnContractOnce("Friend-lobby menu failed safely: " + DescribeException(exception) + ".");
+                if (cancelSelected != null) cancelSelected();
+            }
         }
 
         private void OpenSubmenu()
@@ -255,6 +339,18 @@ namespace CrawlOnline.Menu
         {
             if (!submenuOpen) return;
             if (cancelSelected != null) cancelSelected();
+        }
+
+        private void OnRefreshSelected()
+        {
+            if (!submenuOpen) return;
+            if (refreshSelected != null) refreshSelected();
+        }
+
+        private void OnFriendSelected(int index)
+        {
+            if (!submenuOpen) return;
+            if (friendSelected != null) friendSelected(index);
         }
 
         private void CloseSubmenu()

@@ -103,5 +103,16 @@ state, and returns to the main menu. `BACK` and diagnostic `F9` also cancel a
 host request that is still awaiting its Steam callback. A successful late
 callback is immediately discarded instead of exposing an orphan lobby.
 
-`JOIN FRIEND` remains an effect-free placeholder until its dedicated integration
-card.
+`JOIN FRIEND` requests only lobbies whose packet protocol, session protocol,
+build, and available-slot metadata match. Results are additionally restricted to
+lobbies owned by an immediate Steam friend, normalized into a stable order, and
+shown as identity-free `FRIEND GAME 1..3` rows. The empty result offers
+`REFRESH` and `BACK` rather than pretending a lobby exists.
+
+Selecting a result enters the existing lobby handshake. Metadata is validated
+again before any hello or slot assignment; authentication failure returns a
+retryable error. Discovery, lobby entry, and authentication all carry the
+current Online generation, and `BACK` cancels or cleans up before returning to
+the menu. Steam invitation callbacks use the same path, but are accepted only
+while the legitimate main menu is active; invitations during gameplay or
+another Online operation are ignored safely.

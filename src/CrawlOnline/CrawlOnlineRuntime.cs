@@ -20,11 +20,14 @@ namespace CrawlOnline
         private NativeMainMenuIntegration nativeMenu;
         private OnlineFlowStateMachine onlineFlow;
         private long onlineOperation;
+        private ulong[] friendLobbies = new ulong[0];
 
         public CrawlOnlineRuntime(ManualLogSource logSource)
         {
             log = logSource;
             session = new SteamLobbySession(log);
+            session.FriendLobbiesDiscovered += OnFriendLobbiesDiscovered;
+            session.LobbyJoinRequested += OnLobbyJoinRequested;
             synchronizer = new AuthoritativeSynchronizer(session, log);
             harness = DeterminismHarness.TryCreate(log);
             hud = new SessionHud();
@@ -32,7 +35,8 @@ namespace CrawlOnline
             onlineFlow = new OnlineFlowStateMachine();
             nativeMenu = new NativeMainMenuIntegration(log, OnNativeOnlineSelected,
                 OnNativeHostSelected, OnNativeJoinSelected, OnNativeOnlineBack,
-                OnNativeInviteSelected, OnNativeCancelSelected);
+                OnNativeInviteSelected, OnNativeCancelSelected, OnNativeJoinRefresh,
+                OnNativeFriendSelected);
             log.LogInfo("Ready: F8 host, F7 invite, F9 leave, F5 help, F6 HUD");
         }
 
@@ -83,6 +87,8 @@ namespace CrawlOnline
             }
             if (session != null)
             {
+                session.FriendLobbiesDiscovered -= OnFriendLobbiesDiscovered;
+                session.LobbyJoinRequested -= OnLobbyJoinRequested;
                 session.Dispose();
                 session = null;
             }
@@ -136,7 +142,12 @@ namespace CrawlOnline
 
         private void OnNativeJoinSelected()
         {
-            log.LogInfo("JOIN FRIEND selected; Steam join integration is not active yet.");
+            OnlineFlowTransition transition = onlineFlow.Dispatch(OnlineFlowCommand.JoinFriend);
+            if (!transition.Accepted) return;
+            onlineOperation = transition.Operation;
+            friendLobbies = new ulong[0];
+            nativeMenu.ShowFriendSearch();
+            session.DiscoverFriendLobbies(onlineOperation);
         }
 
         private void OnNativeOnlineBack()
@@ -166,14 +177,86 @@ namespace CrawlOnline
         {
             OnlineFlowTransition transition = onlineFlow.Dispatch(OnlineFlowCommand.Back);
             if (!transition.Accepted) return;
+            bool joinOperation = transition.PreviousState == OnlineFlowState.DiscoveringFriend ||
+                transition.PreviousState == OnlineFlowState.JoiningLobby ||
+                transition.PreviousState == OnlineFlowState.Authenticating ||
+                transition.PreviousState == OnlineFlowState.Connected;
             if (transition.State == OnlineFlowState.OnlineMenu)
             {
-                session.CancelHostOrLeave();
+                if (joinOperation) session.CancelJoinOrLeave();
+                else session.CancelHostOrLeave();
                 nativeMenu.CloseSessionMenu();
                 return;
             }
             onlineOperation = transition.Operation;
-            session.CancelHostOrLeave();
+            if (joinOperation) session.CancelJoinOrLeave();
+            else session.CancelHostOrLeave();
+        }
+
+        private void OnNativeJoinRefresh()
+        {
+            if (onlineFlow.State == OnlineFlowState.RecoverableError)
+            {
+                OnlineFlowTransition retry = onlineFlow.Dispatch(OnlineFlowCommand.Retry);
+                if (!retry.Accepted) return;
+                onlineOperation = retry.Operation;
+            }
+            if (onlineFlow.State != OnlineFlowState.DiscoveringFriend) return;
+            friendLobbies = new ulong[0];
+            nativeMenu.ShowFriendSearch();
+            session.DiscoverFriendLobbies(onlineOperation);
+        }
+
+        private void OnNativeFriendSelected(int index)
+        {
+            if (index < 0 || index >= friendLobbies.Length) return;
+            OnlineFlowTransition found = onlineFlow.DispatchAsync(
+                OnlineFlowCommand.FriendFound, onlineOperation, null);
+            if (!found.Accepted) return;
+            nativeMenu.ShowFriendJoining();
+            session.JoinDiscoveredLobby(friendLobbies[index], onlineOperation);
+        }
+
+        private void OnFriendLobbiesDiscovered(long operation, ulong[] lobbyIds)
+        {
+            if (operation != onlineOperation || onlineFlow.State != OnlineFlowState.DiscoveringFriend)
+                return;
+            SessionHudState state = session.GetHudState();
+            if (state.Status == SessionHudStatus.Error)
+            {
+                if (onlineFlow.DispatchAsync(OnlineFlowCommand.Fail, operation, state.Message).Accepted)
+                    nativeMenu.ShowFriendSearchError();
+                return;
+            }
+            friendLobbies = FriendLobbyList.Normalize(lobbyIds, 3);
+            nativeMenu.ShowFriendLobbies(friendLobbies.Length);
+        }
+
+        private void OnLobbyJoinRequested(ulong lobbyId)
+        {
+            if (lobbyId == 0 || !nativeMenu.CanAcceptExternalJoin)
+            {
+                log.LogWarning("Steam lobby invite ignored outside the active main menu.");
+                return;
+            }
+            if (onlineFlow.State != OnlineFlowState.Offline &&
+                onlineFlow.State != OnlineFlowState.OnlineMenu)
+            {
+                log.LogWarning("Steam lobby invite ignored while another Online operation is active.");
+                return;
+            }
+            if (onlineFlow.State == OnlineFlowState.Offline && !nativeMenu.OpenForExternalJoin())
+                return;
+            OnlineFlowTransition discovery = onlineFlow.Dispatch(OnlineFlowCommand.JoinFriend);
+            if (!discovery.Accepted) return;
+            onlineOperation = discovery.Operation;
+            friendLobbies = new[] { lobbyId };
+            OnlineFlowTransition found = onlineFlow.DispatchAsync(
+                OnlineFlowCommand.FriendFound, onlineOperation, null);
+            if (!found.Accepted) return;
+            nativeMenu.ShowFriendJoining();
+            session.JoinDiscoveredLobby(lobbyId, onlineOperation);
+            log.LogInfo("Accepted a Steam lobby invite from the active main menu.");
         }
 
         private void UpdateOnlineFlow()
@@ -188,10 +271,37 @@ namespace CrawlOnline
                 if (transition.Accepted) nativeMenu.ShowHostWaiting();
             }
             else if ((onlineFlow.State == OnlineFlowState.CreatingLobby ||
-                      onlineFlow.State == OnlineFlowState.WaitingForPlayers) &&
+                      onlineFlow.State == OnlineFlowState.WaitingForPlayers ||
+                      onlineFlow.State == OnlineFlowState.DiscoveringFriend ||
+                      onlineFlow.State == OnlineFlowState.JoiningLobby ||
+                      onlineFlow.State == OnlineFlowState.Authenticating) &&
                      state.Status == SessionHudStatus.Error)
             {
-                onlineFlow.DispatchAsync(OnlineFlowCommand.Fail, onlineOperation, state.Message);
+                bool joining = onlineFlow.State == OnlineFlowState.DiscoveringFriend ||
+                    onlineFlow.State == OnlineFlowState.JoiningLobby ||
+                    onlineFlow.State == OnlineFlowState.Authenticating;
+                if (onlineFlow.DispatchAsync(OnlineFlowCommand.Fail, onlineOperation, state.Message).Accepted && joining)
+                    nativeMenu.ShowFriendSearchError();
+            }
+            else if (onlineFlow.State == OnlineFlowState.JoiningLobby &&
+                     (state.Status == SessionHudStatus.Authenticating ||
+                      state.Status == SessionHudStatus.Connected))
+            {
+                OnlineFlowTransition transport = onlineFlow.DispatchAsync(
+                    OnlineFlowCommand.TransportConnected, onlineOperation, null);
+                if (transport.Accepted && state.Status == SessionHudStatus.Connected)
+                {
+                    OnlineFlowTransition authenticated = onlineFlow.DispatchAsync(
+                        OnlineFlowCommand.Authenticated, onlineOperation, null);
+                    if (authenticated.Accepted) nativeMenu.ShowFriendConnected();
+                }
+            }
+            else if (onlineFlow.State == OnlineFlowState.Authenticating &&
+                     state.Status == SessionHudStatus.Connected)
+            {
+                OnlineFlowTransition authenticated = onlineFlow.DispatchAsync(
+                    OnlineFlowCommand.Authenticated, onlineOperation, null);
+                if (authenticated.Accepted) nativeMenu.ShowFriendConnected();
             }
             else if (onlineFlow.State == OnlineFlowState.Leaving &&
                      state.Status == SessionHudStatus.Offline)
