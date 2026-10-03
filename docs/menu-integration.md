@@ -95,6 +95,10 @@ the submenu is open reconstructs only the original five rows. If the owning menu
 is destroyed during scene replacement, the submenu state is also closed so a
 future main-menu instance can open Online normally.
 
+The native controller cancel dispatch (`MsgBack` or `MsgCancel`) uses that same
+`BACK` path while the Online submenu is open; it never depends on selecting the
+visible row and is ignored safely outside the submenu.
+
 `HOST GAME` creates one friends-only Steam lobby through the existing
 host-authoritative session implementation. Once Steam confirms creation, the
 same native menu presents `INVITE FRIENDS` and `CANCEL`; the former opens the

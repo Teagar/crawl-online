@@ -5,6 +5,24 @@ namespace CrawlOnline.Protocol.Tests;
 
 public sealed class NativeMenuContractTests
 {
+    [Theory]
+    [InlineData(NativeMenuCancelContract.BackMessage)]
+    [InlineData(NativeMenuCancelContract.CancelMessage)]
+    public void NativeControllerCancelMessagesRouteToOnlineBack(string message)
+    {
+        Assert.True(NativeMenuCancelContract.IsCancelMessage(message));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("MsgCrawlOnlineBack")]
+    [InlineData("MsgStart")]
+    public void OnlyNativeCancelMessagesRouteToOnlineBack(string message)
+    {
+        Assert.False(NativeMenuCancelContract.IsCancelMessage(message));
+    }
+
     [Fact]
     public void InsertsBeforeAdjacentLibraryAnchor()
     {
