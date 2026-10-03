@@ -19,6 +19,7 @@ namespace CrawlOnline
         private MenuContractProbe menuProbe;
         private NativeMainMenuIntegration nativeMenu;
         private OnlineFlowStateMachine onlineFlow;
+        private long onlineOperation;
 
         public CrawlOnlineRuntime(ManualLogSource logSource)
         {
@@ -30,7 +31,8 @@ namespace CrawlOnline
             menuProbe = MenuContractProbe.TryCreate(log);
             onlineFlow = new OnlineFlowStateMachine();
             nativeMenu = new NativeMainMenuIntegration(log, OnNativeOnlineSelected,
-                OnNativeHostSelected, OnNativeJoinSelected, OnNativeOnlineBack);
+                OnNativeHostSelected, OnNativeJoinSelected, OnNativeOnlineBack,
+                OnNativeInviteSelected, OnNativeCancelSelected);
             log.LogInfo("Ready: F8 host, F7 invite, F9 leave, F5 help, F6 HUD");
         }
 
@@ -48,7 +50,11 @@ namespace CrawlOnline
             }
             if (Input.GetKeyDown(KeyCode.F8))
             {
-                session.Host();
+                if (onlineFlow.State == OnlineFlowState.OnlineMenu ||
+                    onlineFlow.State == OnlineFlowState.RecoverableError)
+                    OnNativeHostSelected();
+                else
+                    session.Host();
             }
             else if (Input.GetKeyDown(KeyCode.F7))
             {
@@ -56,10 +62,16 @@ namespace CrawlOnline
             }
             else if (Input.GetKeyDown(KeyCode.F9))
             {
-                session.Leave();
+                if (onlineFlow.State == OnlineFlowState.CreatingLobby ||
+                    onlineFlow.State == OnlineFlowState.WaitingForPlayers ||
+                    onlineFlow.State == OnlineFlowState.RecoverableError)
+                    OnNativeCancelSelected();
+                else
+                    session.Leave();
             }
 
             session.Poll();
+            UpdateOnlineFlow();
         }
 
         public void Shutdown()
@@ -114,7 +126,12 @@ namespace CrawlOnline
 
         private void OnNativeHostSelected()
         {
-            log.LogInfo("HOST GAME selected; Steam hosting integration is not active yet.");
+            OnlineFlowTransition transition = onlineFlow.State == OnlineFlowState.RecoverableError
+                ? onlineFlow.Dispatch(OnlineFlowCommand.Retry)
+                : onlineFlow.Dispatch(OnlineFlowCommand.Host);
+            if (!transition.Accepted) return;
+            onlineOperation = transition.Operation;
+            session.Host();
         }
 
         private void OnNativeJoinSelected()
@@ -125,7 +142,84 @@ namespace CrawlOnline
         private void OnNativeOnlineBack()
         {
             OnlineFlowTransition transition = onlineFlow.Dispatch(OnlineFlowCommand.Back);
-            if (transition.Accepted) log.LogInfo("Returned from native Online submenu.");
+            if (!transition.Accepted) return;
+            if (transition.State == OnlineFlowState.Leaving)
+            {
+                onlineOperation = transition.Operation;
+                session.CancelHostOrLeave();
+                return;
+            }
+            if (transition.State == OnlineFlowState.OnlineMenu)
+            {
+                session.CancelHostOrLeave();
+                onlineFlow.Dispatch(OnlineFlowCommand.Back);
+            }
+            log.LogInfo("Returned from native Online submenu.");
+        }
+
+        private void OnNativeInviteSelected()
+        {
+            if (onlineFlow.State == OnlineFlowState.WaitingForPlayers) session.OpenInviteDialog();
+        }
+
+        private void OnNativeCancelSelected()
+        {
+            OnlineFlowTransition transition = onlineFlow.Dispatch(OnlineFlowCommand.Back);
+            if (!transition.Accepted) return;
+            if (transition.State == OnlineFlowState.OnlineMenu)
+            {
+                session.CancelHostOrLeave();
+                nativeMenu.CloseSessionMenu();
+                return;
+            }
+            onlineOperation = transition.Operation;
+            session.CancelHostOrLeave();
+        }
+
+        private void UpdateOnlineFlow()
+        {
+            if (onlineFlow == null || session == null) return;
+            SessionHudState state = session.GetHudState();
+            if (onlineFlow.State == OnlineFlowState.CreatingLobby &&
+                state.Status == SessionHudStatus.WaitingForPeers)
+            {
+                OnlineFlowTransition transition = onlineFlow.DispatchAsync(
+                    OnlineFlowCommand.LobbyCreated, onlineOperation, null);
+                if (transition.Accepted) nativeMenu.ShowHostWaiting();
+            }
+            else if ((onlineFlow.State == OnlineFlowState.CreatingLobby ||
+                      onlineFlow.State == OnlineFlowState.WaitingForPlayers) &&
+                     state.Status == SessionHudStatus.Error)
+            {
+                onlineFlow.DispatchAsync(OnlineFlowCommand.Fail, onlineOperation, state.Message);
+            }
+            else if (onlineFlow.State == OnlineFlowState.Leaving &&
+                     state.Status == SessionHudStatus.Offline)
+            {
+                OnlineFlowTransition transition = onlineFlow.DispatchAsync(
+                    OnlineFlowCommand.CleanupComplete, onlineOperation, null);
+                if (transition.Accepted)
+                {
+                    nativeMenu.CloseSessionMenu();
+                    if (onlineFlow.State == OnlineFlowState.OnlineMenu)
+                        onlineFlow.Dispatch(OnlineFlowCommand.Back);
+                }
+            }
+            else if (onlineFlow.State == OnlineFlowState.WaitingForPlayers &&
+                     state.Status == SessionHudStatus.Offline)
+            {
+                OnlineFlowTransition leave = onlineFlow.Dispatch(OnlineFlowCommand.Leave);
+                if (!leave.Accepted) return;
+                onlineOperation = leave.Operation;
+                OnlineFlowTransition cleanup = onlineFlow.DispatchAsync(
+                    OnlineFlowCommand.CleanupComplete, onlineOperation, null);
+                if (cleanup.Accepted)
+                {
+                    nativeMenu.CloseSessionMenu();
+                    if (onlineFlow.State == OnlineFlowState.OnlineMenu)
+                        onlineFlow.Dispatch(OnlineFlowCommand.Back);
+                }
+            }
         }
     }
 }

@@ -95,6 +95,13 @@ the submenu is open reconstructs only the original five rows. If the owning menu
 is destroyed during scene replacement, the submenu state is also closed so a
 future main-menu instance can open Online normally.
 
-The host and join bridge actions are intentionally placeholders in this stage:
-they log the selection but do not create or join a Steam lobby. Session effects
-are connected by their dedicated cards.
+`HOST GAME` creates one friends-only Steam lobby through the existing
+host-authoritative session implementation. Once Steam confirms creation, the
+same native menu presents `INVITE FRIENDS` and `CANCEL`; the former opens the
+Steam lobby invitation dialog and the latter leaves the lobby, clears P2P/session
+state, and returns to the main menu. `BACK` and diagnostic `F9` also cancel a
+host request that is still awaiting its Steam callback. A successful late
+callback is immediately discarded instead of exposing an orphan lobby.
+
+`JOIN FRIEND` remains an effect-free placeholder until its dedicated integration
+card.

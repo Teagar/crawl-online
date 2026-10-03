@@ -48,6 +48,25 @@ public sealed class OnlineFlowStateMachineTests
         Assert.Equal(OnlineFlowState.Leaving, flow.State);
     }
 
+    [Fact]
+    public void CancellingPendingHostRejectsItsLobbyCallbackAndAllowsFreshHost()
+    {
+        var flow = OpenMenu();
+        long cancelledOperation = flow.Dispatch(OnlineFlowCommand.Host).Operation;
+
+        OnlineFlowTransition cancel = flow.Dispatch(OnlineFlowCommand.Back);
+
+        Assert.Equal(OnlineFlowState.Leaving, cancel.State);
+        Assert.True(cancel.Operation > cancelledOperation);
+        Assert.False(flow.DispatchAsync(OnlineFlowCommand.LobbyCreated, cancelledOperation, null).Accepted);
+        Assert.True(flow.DispatchAsync(OnlineFlowCommand.CleanupComplete, cancel.Operation, null).Accepted);
+
+        OnlineFlowTransition freshHost = flow.Dispatch(OnlineFlowCommand.Host);
+        Assert.True(freshHost.Accepted);
+        Assert.Equal(OnlineFlowState.CreatingLobby, freshHost.State);
+        Assert.True(freshHost.Operation > cancel.Operation);
+    }
+
     [Theory]
     [InlineData(OnlineFlowCommand.Fail)]
     [InlineData(OnlineFlowCommand.Timeout)]

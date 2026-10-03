@@ -15,6 +15,8 @@ namespace CrawlOnline.Menu
         private readonly Action hostSelected;
         private readonly Action joinSelected;
         private readonly Action backSelected;
+        private readonly Action inviteSelected;
+        private readonly Action cancelSelected;
         private readonly Type menuMainType;
         private int framesUntilScan;
         private object installedMenu;
@@ -23,13 +25,16 @@ namespace CrawlOnline.Menu
         private bool submenuOpen;
 
         public NativeMainMenuIntegration(ManualLogSource logSource, Func<bool> selectedCallback,
-            Action hostCallback, Action joinCallback, Action backCallback)
+            Action hostCallback, Action joinCallback, Action backCallback, Action inviteCallback,
+            Action cancelCallback)
         {
             log = logSource;
             selected = selectedCallback;
             hostSelected = hostCallback;
             joinSelected = joinCallback;
             backSelected = backCallback;
+            inviteSelected = inviteCallback;
+            cancelSelected = cancelCallback;
             menuMainType = AccessTools.TypeByName("MenuMain");
         }
 
@@ -175,7 +180,36 @@ namespace CrawlOnline.Menu
         {
             MainMenuOnlineBridge existing = owner.GetComponent<MainMenuOnlineBridge>();
             bridge = existing == null ? owner.AddComponent<MainMenuOnlineBridge>() : existing;
-            bridge.Initialise(OpenSubmenu, OnHostSelected, OnJoinSelected, CloseSubmenu);
+            bridge.Initialise(OpenSubmenu, OnHostSelected, OnJoinSelected, CloseSubmenu,
+                OnInviteSelected, OnCancelSelected);
+        }
+
+        public void ShowHostWaiting()
+        {
+            if (!submenuOpen || installedMenu == null) return;
+            try
+            {
+                IList data = ReadRequiredField(installedMenu.GetType(), installedMenu, "m_itemsData") as IList;
+                GameObject owner = ReadRequiredField(installedMenu.GetType(), installedMenu, "m_owner") as GameObject;
+                if (data == null || data.Count < 2 || owner == null)
+                    throw new InvalidOperationException("Main-menu template is unavailable");
+                RemoveAllRenderedItems(installedMenu);
+                InsertRenderedItem(installedMenu, 0, data[0], "INVITE FRIENDS", "MsgCrawlOnlineInvite", owner);
+                InsertRenderedItem(installedMenu, 1, data[1], "CANCEL", "MsgCrawlOnlineCancel", owner);
+                SetMenuActive(installedMenu);
+                SetSelectedItem(installedMenu, 0);
+                log.LogInfo("Native Online submenu entered host waiting mode.");
+            }
+            catch (Exception exception)
+            {
+                WarnContractOnce("Host waiting menu failed safely: " + DescribeException(exception) + ".");
+                if (cancelSelected != null) cancelSelected();
+            }
+        }
+
+        public void CloseSessionMenu()
+        {
+            CloseSubmenu();
         }
 
         private void OpenSubmenu()
@@ -211,6 +245,18 @@ namespace CrawlOnline.Menu
             if (joinSelected != null) joinSelected();
         }
 
+        private void OnInviteSelected()
+        {
+            if (!submenuOpen) return;
+            if (inviteSelected != null) inviteSelected();
+        }
+
+        private void OnCancelSelected()
+        {
+            if (!submenuOpen) return;
+            if (cancelSelected != null) cancelSelected();
+        }
+
         private void CloseSubmenu()
         {
             if (!submenuOpen) return;
@@ -229,6 +275,7 @@ namespace CrawlOnline.Menu
             InsertRenderedItem(menu, 0, data[0], "HOST GAME", "MsgCrawlOnlineHost", owner);
             InsertRenderedItem(menu, 1, data[1], "JOIN FRIEND", "MsgCrawlOnlineJoin", owner);
             InsertRenderedItem(menu, 2, data[1], "BACK", "MsgCrawlOnlineBack", owner);
+            SetMenuActive(menu);
             SetSelectedItem(menu, 0);
 
             IList items = ReadRequiredField(menu.GetType(), menu, "m_items") as IList;
@@ -248,6 +295,7 @@ namespace CrawlOnline.Menu
             for (int i = 0; i < data.Count; i++) InsertRenderedItem(menu, i, data[i], null, null, owner);
             if (includeOnline)
                 InsertRenderedItem(menu, 1, data[1], "ONLINE", NativeMenuContract.OnlineMessage, owner);
+            SetMenuActive(menu);
             SetSelectedItem(menu, includeOnline ? 1 : 0);
         }
 
@@ -312,6 +360,11 @@ namespace CrawlOnline.Menu
                 null, new[] { typeof(int) }, null);
             if (method == null) throw new MissingMethodException(menu.GetType().FullName, "SetSelectedItem(Int32)");
             InvokeReflected(method, menu, new object[] { index }, "SetSelectedItem");
+        }
+
+        private static void SetMenuActive(object menu)
+        {
+            WriteRequiredField(menu.GetType(), menu, "m_active", true);
         }
 
         private static bool MessagesEqual(string[] actual, string[] expected)

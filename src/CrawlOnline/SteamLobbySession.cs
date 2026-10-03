@@ -39,6 +39,7 @@ namespace CrawlOnline
         private uint snapshotSequence;
         private SessionHudStatus hudStatus = SessionHudStatus.Offline;
         private string hudMessage = "Offline — F8 creates a friends-only lobby.";
+        private bool cancelPendingHost;
 
         public event Action<SessionInputFrame> InputReceived;
         public event Action<SessionInputFrame> InputEventReceived;
@@ -107,6 +108,11 @@ namespace CrawlOnline
 
         public void Host()
         {
+            if (hudStatus == SessionHudStatus.CreatingLobby)
+            {
+                log.LogWarning("Lobby creation is already pending.");
+                return;
+            }
             if (InLobby)
             {
                 log.LogWarning("Already in lobby " + lobbyId);
@@ -114,8 +120,21 @@ namespace CrawlOnline
             }
 
             log.LogInfo("Creating friends-only Crawl Online lobby...");
+            cancelPendingHost = false;
             SetHudStatus(SessionHudStatus.CreatingLobby, "Creating friends-only lobby…");
             lobbyCreated.Set(SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypeFriendsOnly, 4));
+        }
+
+        public void CancelHostOrLeave()
+        {
+            if (!InLobby && hudStatus == SessionHudStatus.CreatingLobby)
+            {
+                cancelPendingHost = true;
+                SetHudStatus(SessionHudStatus.CreatingLobby, "Cancelling lobby creation…");
+                log.LogInfo("Lobby creation cancellation requested; waiting for Steam callback cleanup.");
+                return;
+            }
+            Leave();
         }
 
         public void OpenInviteDialog()
@@ -128,6 +147,7 @@ namespace CrawlOnline
             }
 
             SteamFriends.ActivateGameOverlayInviteDialog(lobbyId);
+            log.LogInfo("Opened Steam invite dialog for lobby " + lobbyId + ".");
         }
 
         public void Leave()
@@ -258,6 +278,18 @@ namespace CrawlOnline
 
         private void OnLobbyCreated(LobbyCreated_t result, bool ioFailure)
         {
+            if (cancelPendingHost)
+            {
+                cancelPendingHost = false;
+                if (!ioFailure && result.m_eResult == EResult.k_EResultOK)
+                {
+                    CSteamID cancelledLobby = new CSteamID(result.m_ulSteamIDLobby);
+                    SteamMatchmaking.LeaveLobby(cancelledLobby);
+                    log.LogInfo("Discarded cancelled lobby creation before exposing the session.");
+                }
+                ResetSession();
+                return;
+            }
             if (ioFailure || result.m_eResult != EResult.k_EResultOK)
             {
                 log.LogError("Lobby creation failed: " + result.m_eResult + ", IO failure=" + ioFailure);
@@ -275,7 +307,9 @@ namespace CrawlOnline
             SteamMatchmaking.SetLobbyData(lobbyId, LobbySessionProtocolKey, SessionProtocolVersion);
             SteamMatchmaking.SetLobbyData(lobbyId, LobbyBuildKey, CrawlOnlineRuntime.Version);
             SteamMatchmaking.SetLobbyData(lobbyId, LobbyNonceKey, sessionNonce.ToString("x16", CultureInfo.InvariantCulture));
-            log.LogInfo("Hosting authoritative lobby " + lobbyId + " as slot 0. Press F7 to invite friends.");
+            log.LogInfo("Hosting authoritative lobby " + lobbyId + " as slot 0 with session nonce " +
+                        sessionNonce.ToString("x16", CultureInfo.InvariantCulture) +
+                        ". Press F7 to invite friends.");
             SetHudStatus(SessionHudStatus.WaitingForPeers, "Lobby ready — F7 invites friends.");
         }
 
@@ -558,6 +592,7 @@ namespace CrawlOnline
             localInputSequence = 0;
             localInputEventSequence = 0;
             snapshotSequence = 0;
+            cancelPendingHost = false;
             if (hudStatus != SessionHudStatus.Error)
                 SetHudStatus(SessionHudStatus.Offline, "Offline — F8 creates a friends-only lobby.");
         }

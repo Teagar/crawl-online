@@ -9,14 +9,18 @@ namespace CrawlOnline.Menu
         private Action host;
         private Action join;
         private Action back;
+        private Action invite;
+        private Action cancel;
 
         public void Initialise(Action selectedCallback, Action hostCallback, Action joinCallback,
-            Action backCallback)
+            Action backCallback, Action inviteCallback, Action cancelCallback)
         {
             selected = selectedCallback;
             host = hostCallback;
             join = joinCallback;
             back = backCallback;
+            invite = inviteCallback;
+            cancel = cancelCallback;
         }
 
         // Invoked by the legitimate menu's existing message dispatch.
@@ -40,12 +44,24 @@ namespace CrawlOnline.Menu
             if (back != null) back();
         }
 
+        public void MsgCrawlOnlineInvite()
+        {
+            if (invite != null) invite();
+        }
+
+        public void MsgCrawlOnlineCancel()
+        {
+            if (cancel != null) cancel();
+        }
+
         private void OnDestroy()
         {
             selected = null;
             host = null;
             join = null;
             back = null;
+            invite = null;
+            cancel = null;
         }
     }
 }
