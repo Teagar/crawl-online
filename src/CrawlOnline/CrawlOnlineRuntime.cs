@@ -1,6 +1,7 @@
 using BepInEx.Logging;
 using CrawlOnline.Determinism;
 using CrawlOnline.Authoritative;
+using CrawlOnline.Diagnostics;
 using UnityEngine;
 
 namespace CrawlOnline
@@ -13,6 +14,7 @@ namespace CrawlOnline
         private DeterminismHarness harness;
         private AuthoritativeSynchronizer synchronizer;
         private SessionHud hud;
+        private MenuContractProbe menuProbe;
 
         public CrawlOnlineRuntime(ManualLogSource logSource)
         {
@@ -21,11 +23,13 @@ namespace CrawlOnline
             synchronizer = new AuthoritativeSynchronizer(session, log);
             harness = DeterminismHarness.TryCreate(log);
             hud = new SessionHud();
+            menuProbe = MenuContractProbe.TryCreate(log);
             log.LogInfo("Ready: F8 host, F7 invite, F9 leave, F5 help, F6 HUD");
         }
 
         public void Tick()
         {
+            if (menuProbe != null) menuProbe.Tick();
             if (Input.GetKeyDown(KeyCode.F5))
             {
                 hud.ToggleTutorial();
@@ -68,6 +72,7 @@ namespace CrawlOnline
                 harness = null;
             }
             hud = null;
+            menuProbe = null;
         }
 
         public void FixedTick()

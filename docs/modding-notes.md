@@ -17,6 +17,8 @@ contributors without reproducing proprietary game code.
 - The Windows executable is 32-bit and requires BepInEx x86. Linux uses the
   x86_64 package. Exact supported assembly fingerprints are listed in
   [research.md](research.md).
+- The clean-room main-menu reflection contract and fail-safe insertion design
+  are documented in [menu-integration.md](menu-integration.md).
 
 ## Input boundary
 
