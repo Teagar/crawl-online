@@ -62,6 +62,33 @@ public sealed class OnlineFlowStateMachineTests
     }
 
     [Fact]
+    public void EveryLateJoinCallbackIsRejectedAfterCleanupAndFreshOperation()
+    {
+        var flow = OpenMenu();
+        long cancelledOperation = flow.Dispatch(OnlineFlowCommand.JoinFriend).Operation;
+        OnlineFlowTransition leaving = flow.Dispatch(OnlineFlowCommand.Back);
+        Assert.True(flow.DispatchAsync(OnlineFlowCommand.CleanupComplete, leaving.Operation, null).Accepted);
+
+        long freshOperation = flow.Dispatch(OnlineFlowCommand.JoinFriend).Operation;
+        OnlineFlowState freshState = flow.State;
+        foreach (OnlineFlowCommand callback in new[]
+        {
+            OnlineFlowCommand.FriendFound,
+            OnlineFlowCommand.TransportConnected,
+            OnlineFlowCommand.Authenticated,
+            OnlineFlowCommand.Fail,
+            OnlineFlowCommand.Timeout,
+            OnlineFlowCommand.HostLeft,
+            OnlineFlowCommand.CleanupComplete
+        })
+        {
+            Assert.False(flow.DispatchAsync(callback, cancelledOperation, "stale").Accepted);
+            Assert.Equal(freshState, flow.State);
+            Assert.Equal(freshOperation, flow.Operation);
+        }
+    }
+
+    [Fact]
     public void CancellingPendingHostRejectsItsLobbyCallbackAndAllowsFreshHost()
     {
         var flow = OpenMenu();

@@ -206,6 +206,17 @@ public sealed class AuthoritativeProtocolTests
     }
 
     [Fact]
+    public void SequenceWindowRejectsInvalidSlotsWithoutMutatingValidSlots()
+    {
+        var window = new SequenceWindow(77);
+        Assert.False(window.TryAcceptInput(Input(77, 100, byte.MaxValue)));
+        Assert.False(window.TryAcceptInputEvent(Input(77, 100, 4)));
+
+        Assert.True(window.TryAcceptInput(Input(77, 1, 0)));
+        Assert.True(window.TryAcceptInputEvent(Input(77, 1, 0)));
+    }
+
+    [Fact]
     public void InputEventsHaveIndependentReliableSequenceWindow()
     {
         var window = new SequenceWindow(77);

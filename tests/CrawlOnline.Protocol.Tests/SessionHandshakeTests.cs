@@ -101,6 +101,21 @@ public sealed class SessionHandshakeTests
     }
 
     [Fact]
+    public void CorruptedFingerprintRoundTripsButCannotAllocateASlot()
+    {
+        var roster = Roster();
+        SessionHello hello = Hello(101, 500, 1);
+        byte[] packet = PacketCodec.EncodeHello(hello);
+        packet[^1] ^= 0x80;
+
+        Assert.True(PacketCodec.TryDecodeHello(packet, out SessionHello decoded));
+        Assert.NotEqual(WindowsBuild, decoded.GameBuild);
+        Assert.False(roster.TryAccept(101, decoded, out _, out SessionRejected rejected));
+        Assert.Equal(HandshakeRejectReason.IncompatibleGameBuild, rejected.Reason);
+        Assert.Empty(roster.GetConnectedPeerSlots());
+    }
+
+    [Fact]
     public void ReconnectRetainsSlotWithNewAttempt()
     {
         var roster = Roster();
