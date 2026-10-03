@@ -18,6 +18,7 @@ namespace CrawlOnline
         private SessionHud hud;
         private MenuContractProbe menuProbe;
         private NativeMainMenuIntegration nativeMenu;
+        private NativeMenuAltBackHook nativeMenuAltBackHook;
         private OnlineFlowStateMachine onlineFlow;
         private long onlineOperation;
         private ulong[] friendLobbies = new ulong[0];
@@ -37,6 +38,7 @@ namespace CrawlOnline
                 OnNativeHostSelected, OnNativeJoinSelected, OnNativeOnlineBack,
                 OnNativeInviteSelected, OnNativeCancelSelected, OnNativeJoinRefresh,
                 OnNativeFriendSelected);
+            nativeMenuAltBackHook = NativeMenuAltBackHook.TryCreate(log, nativeMenu);
             log.LogInfo("Ready: F8 host, F7 invite, F9 leave, F5 help, F6 HUD");
         }
 
@@ -44,6 +46,7 @@ namespace CrawlOnline
         {
             if (menuProbe != null) menuProbe.Tick();
             if (nativeMenu != null) nativeMenu.Tick();
+            if (nativeMenuAltBackHook != null) nativeMenuAltBackHook.Tick();
             if (Input.GetKeyDown(KeyCode.F5))
             {
                 hud.ToggleTutorial();
@@ -101,6 +104,11 @@ namespace CrawlOnline
             }
             hud = null;
             menuProbe = null;
+            if (nativeMenuAltBackHook != null)
+            {
+                nativeMenuAltBackHook.Dispose();
+                nativeMenuAltBackHook = null;
+            }
             if (nativeMenu != null)
             {
                 nativeMenu.Dispose();

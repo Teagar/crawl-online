@@ -52,21 +52,6 @@ namespace CrawlOnline.Menu
             if (back != null) back();
         }
 
-        // Invoked by the legitimate menu when the controller's cancel action
-        // is pressed. The ONLINE submenu has no native BACK row to receive it,
-        // so route the native message through the same fail-safe callback.
-        public void MsgBack()
-        {
-            DispatchNativeCancel(NativeMenuCancelContract.BackMessage);
-        }
-
-        // Some supported menu states use MsgCancel rather than MsgBack for the
-        // same native cancel action. Keep both names bound to the same handler.
-        public void MsgCancel()
-        {
-            DispatchNativeCancel(NativeMenuCancelContract.CancelMessage);
-        }
-
         public void MsgCrawlOnlineInvite()
         {
             if (invite != null) invite();
@@ -99,11 +84,6 @@ namespace CrawlOnline.Menu
 
         public void MsgCrawlOnlineNoop()
         {
-        }
-
-        private void DispatchNativeCancel(string message)
-        {
-            if (NativeMenuCancelContract.IsCancelMessage(message) && back != null) back();
         }
 
         private void OnDestroy()

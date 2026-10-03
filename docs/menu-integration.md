@@ -95,9 +95,12 @@ the submenu is open reconstructs only the original five rows. If the owning menu
 is destroyed during scene replacement, the submenu state is also closed so a
 future main-menu instance can open Online normally.
 
-The native controller cancel dispatch (`MsgBack` or `MsgCancel`) uses that same
-`BACK` path while the Online submenu is open; it never depends on selecting the
-visible row and is ignored safely outside the submenu.
+Physical controller Circle is observed through a dynamic Harmony postfix on the
+exact `MenuTextMenu.MenuInputDown(eInput, eController&)` runtime overload. The
+postfix only latches a successful `Alt` result for the installed Online submenu;
+it never changes the game's result or reconstructs the menu during input
+dispatch. The following runtime tick consumes that one-shot latch through the
+same `BACK` path, and ignores it safely outside the submenu.
 
 `HOST GAME` creates one friends-only Steam lobby through the existing
 host-authoritative session implementation. Once Steam confirms creation, the

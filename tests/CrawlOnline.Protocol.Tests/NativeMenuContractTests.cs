@@ -5,22 +5,32 @@ namespace CrawlOnline.Protocol.Tests;
 
 public sealed class NativeMenuContractTests
 {
-    [Theory]
-    [InlineData(NativeMenuCancelContract.BackMessage)]
-    [InlineData(NativeMenuCancelContract.CancelMessage)]
-    public void NativeControllerCancelMessagesRouteToOnlineBack(string message)
+    [Fact]
+    public void NativeAltBackRequiresTheConfirmedMenuConditions()
     {
-        Assert.True(NativeMenuCancelContract.IsCancelMessage(message));
+        Assert.True(NativeMenuAltBackContract.ShouldLatch(true, true, true, true));
     }
 
     [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData("MsgCrawlOnlineBack")]
-    [InlineData("MsgStart")]
-    public void OnlyNativeCancelMessagesRouteToOnlineBack(string message)
+    [InlineData(false, true, true, true)]
+    [InlineData(true, false, true, true)]
+    [InlineData(true, true, false, true)]
+    [InlineData(true, true, true, false)]
+    public void NativeAltBackFailsClosedWhenAnyConditionIsMissing(bool inputDown, bool isAlt,
+        bool installed, bool submenuOpen)
     {
-        Assert.False(NativeMenuCancelContract.IsCancelMessage(message));
+        Assert.False(NativeMenuAltBackContract.ShouldLatch(inputDown, isAlt, installed, submenuOpen));
+    }
+
+    [Fact]
+    public void NativeAltBackLatchCoalescesRepeatedPostfixesAndConsumesOnce()
+    {
+        var latch = new NativeMenuBackLatch();
+
+        Assert.True(latch.TryLatch(true, true, true, true));
+        Assert.True(latch.TryLatch(true, true, true, true));
+        Assert.True(latch.TryConsume());
+        Assert.False(latch.TryConsume());
     }
 
     [Fact]
