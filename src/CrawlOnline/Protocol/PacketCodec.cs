@@ -5,10 +5,10 @@ namespace CrawlOnline.Protocol
     public static class PacketCodec
     {
         private const uint Magic = 0x434F4E4C; // "CONL"
-        public const byte ProtocolVersion = 2;
+        public const byte ProtocolVersion = 3;
         public const int InputPacketSize = 18;
-        public const int HelloPacketSize = 31;
-        public const int AcceptedPacketSize = 32;
+        public const int HelloPacketSize = 63;
+        public const int AcceptedPacketSize = 64;
         public const int RejectedPacketSize = 19;
 
         public static byte[] EncodeInput(InputFrame frame)
@@ -70,6 +70,7 @@ namespace CrawlOnline.Protocol
             WriteUInt32(data, 22, hello.Attempt);
             data[26] = hello.RequestedSlot;
             WriteUInt32(data, 27, hello.Capabilities);
+            WriteFingerprint(data, 31, hello.GameBuild);
             return data;
         }
 
@@ -82,6 +83,7 @@ namespace CrawlOnline.Protocol
             hello.Attempt = ReadUInt32(data, 22);
             hello.RequestedSlot = data[26];
             hello.Capabilities = ReadUInt32(data, 27);
+            hello.GameBuild = ReadFingerprint(data, 31);
             return true;
         }
 
@@ -94,6 +96,7 @@ namespace CrawlOnline.Protocol
             data[26] = accepted.AssignedSlot;
             data[27] = accepted.MaxPlayers;
             WriteUInt32(data, 28, accepted.Capabilities);
+            WriteFingerprint(data, 32, accepted.GameBuild);
             return data;
         }
 
@@ -107,6 +110,7 @@ namespace CrawlOnline.Protocol
             accepted.AssignedSlot = data[26];
             accepted.MaxPlayers = data[27];
             accepted.Capabilities = ReadUInt32(data, 28);
+            accepted.GameBuild = ReadFingerprint(data, 32);
             return true;
         }
 
@@ -167,6 +171,25 @@ namespace CrawlOnline.Protocol
         private static void WriteUInt64(byte[] data, int offset, ulong value)
         {
             for (int i = 0; i < 8; i++) data[offset + i] = (byte)(value >> (i * 8));
+        }
+
+        private static void WriteFingerprint(byte[] data, int offset, GameBuildFingerprint fingerprint)
+        {
+            WriteUInt64(data, offset, fingerprint.Part0);
+            WriteUInt64(data, offset + 8, fingerprint.Part1);
+            WriteUInt64(data, offset + 16, fingerprint.Part2);
+            WriteUInt64(data, offset + 24, fingerprint.Part3);
+        }
+
+        private static GameBuildFingerprint ReadFingerprint(byte[] data, int offset)
+        {
+            return new GameBuildFingerprint
+            {
+                Part0 = ReadUInt64(data, offset),
+                Part1 = ReadUInt64(data, offset + 8),
+                Part2 = ReadUInt64(data, offset + 16),
+                Part3 = ReadUInt64(data, offset + 24)
+            };
         }
 
         private static ulong ReadUInt64(byte[] data, int offset)

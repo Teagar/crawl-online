@@ -16,16 +16,20 @@ namespace CrawlOnline.Protocol
         private readonly ulong hostId;
         private readonly ulong sessionNonce;
         private readonly byte maxPlayers;
+        private readonly GameBuildFingerprint gameBuild;
         private readonly Dictionary<ulong, Peer> peers = new Dictionary<ulong, Peer>();
 
-        public SessionRoster(ulong authoritativeHostId, ulong nonce, byte playerLimit)
+        public SessionRoster(ulong authoritativeHostId, ulong nonce, byte playerLimit,
+            GameBuildFingerprint authoritativeGameBuild)
         {
             if (authoritativeHostId == 0) throw new ArgumentOutOfRangeException("authoritativeHostId");
             if (nonce == 0) throw new ArgumentOutOfRangeException("nonce");
             if (playerLimit < 2 || playerLimit > 4) throw new ArgumentOutOfRangeException("playerLimit");
+            if (authoritativeGameBuild.IsEmpty) throw new ArgumentOutOfRangeException("authoritativeGameBuild");
             hostId = authoritativeHostId;
             sessionNonce = nonce;
             maxPlayers = playerLimit;
+            gameBuild = authoritativeGameBuild;
             peers.Add(hostId, new Peer { Id = hostId, Attempt = 1, Slot = 0, Connected = true });
         }
 
@@ -52,6 +56,11 @@ namespace CrawlOnline.Protocol
             if ((hello.Capabilities & SessionCapabilities.AuthoritativeSnapshots) == 0)
             {
                 rejected.Reason = HandshakeRejectReason.IncompatibleCapabilities;
+                return false;
+            }
+            if (hello.GameBuild != gameBuild)
+            {
+                rejected.Reason = HandshakeRejectReason.IncompatibleGameBuild;
                 return false;
             }
 
@@ -138,15 +147,16 @@ namespace CrawlOnline.Protocol
         }
 
         public static bool ValidateAcceptance(SessionAccepted accepted, ulong expectedHostId,
-            ulong expectedNonce, uint expectedAttempt)
+            ulong expectedNonce, uint expectedAttempt, GameBuildFingerprint expectedGameBuild)
         {
             return accepted.HostId == expectedHostId &&
                    accepted.SessionNonce == expectedNonce &&
                    accepted.Attempt == expectedAttempt &&
                    accepted.MaxPlayers >= 2 && accepted.MaxPlayers <= 4 &&
                    accepted.AssignedSlot < accepted.MaxPlayers &&
-                   accepted.AssignedSlot != 0 &&
-                   (accepted.Capabilities & SessionCapabilities.AuthoritativeSnapshots) != 0;
+                    accepted.AssignedSlot != 0 &&
+                    accepted.GameBuild == expectedGameBuild && !accepted.GameBuild.IsEmpty &&
+                    (accepted.Capabilities & SessionCapabilities.AuthoritativeSnapshots) != 0;
         }
 
         private bool TryAllocateSlot(byte requested, out byte slot, out HandshakeRejectReason reason)
@@ -199,7 +209,8 @@ namespace CrawlOnline.Protocol
                 Attempt = peer.Attempt,
                 AssignedSlot = peer.Slot,
                 MaxPlayers = maxPlayers,
-                Capabilities = SessionCapabilities.Current
+                Capabilities = SessionCapabilities.Current,
+                GameBuild = gameBuild
             };
         }
 

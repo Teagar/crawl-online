@@ -28,6 +28,7 @@ namespace CrawlOnline.Bootstrap
         private MethodInfo lateTick;
         private MethodInfo drawHud;
         private bool waitingLogged;
+        private string gameBuildFingerprint;
 
         private void Awake()
         {
@@ -59,6 +60,7 @@ namespace CrawlOnline.Bootstrap
                 return;
             }
 
+            gameBuildFingerprint = gameAssemblyHash.ToLowerInvariant();
             Logger.LogInfo("Compatibility fingerprint accepted");
         }
 
@@ -127,7 +129,7 @@ namespace CrawlOnline.Bootstrap
                 string directory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
                 Assembly assembly = Assembly.LoadFrom(Path.Combine(directory, "CrawlOnline.Runtime.dll"));
                 Type type = assembly.GetType("CrawlOnline.CrawlOnlineRuntime", true);
-                runtime = Activator.CreateInstance(type, new object[] { Logger });
+                runtime = Activator.CreateInstance(type, new object[] { Logger, gameBuildFingerprint });
                 tick = type.GetMethod("Tick", BindingFlags.Public | BindingFlags.Instance);
                 shutdown = type.GetMethod("Shutdown", BindingFlags.Public | BindingFlags.Instance);
                 fixedTick = type.GetMethod("FixedTick", BindingFlags.Public | BindingFlags.Instance);

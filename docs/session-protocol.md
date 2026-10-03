@@ -13,11 +13,14 @@ The host publishes lobby metadata for:
 - packet protocol version;
 - session protocol version;
 - mod build version;
+- exact verified `Assembly-CSharp.dll` SHA-256 fingerprint;
 - a cryptographically random per-lobby session nonce.
 
-Joining requires exact packet, session-protocol, and mod-build versions before
-the hello is sent. This prevents two locally valid but wire-incompatible builds
-from beginning gameplay.
+Joining requires exact packet, session-protocol, mod-build, and game-assembly
+fingerprints before the hello is sent. This prevents two locally valid but
+unvalidated game builds from beginning gameplay. In particular, Windows 1.0.1
+and Linux-native 1.0.3 remain isolated until a real cross-build session
+establishes gameplay compatibility.
 
 The nonce invalidates packets retained from an earlier lobby. It is not a secret
 and is not treated as authentication by itself.
@@ -25,17 +28,19 @@ and is not treated as authentication by itself.
 ## Handshake
 
 `Hello` contains the session nonce, sender Steam ID, monotonically increasing
-attempt, requested slot (or automatic assignment), and capability flags. The
-host verifies transport identity, nonce, attempt, required authoritative-state
-capability, and slot availability.
+attempt, requested slot (or automatic assignment), capability flags, and the
+full verified game-assembly fingerprint. The host verifies transport identity,
+nonce, attempt, required authoritative-state capability, exact game build, and
+slot availability.
 
-`HelloAccepted` echoes nonce and attempt and assigns a slot from 1–3. It also
-identifies the host, maximum player count, and negotiated capabilities. Slot 0
-is permanently reserved for the authoritative host. Clients validate every
-field against Steam lobby state before becoming connected.
+`HelloAccepted` echoes nonce, attempt, and authoritative game fingerprint, then
+assigns a slot from 1–3. It also identifies the host, maximum player count, and
+negotiated capabilities. Slot 0 is permanently reserved for the authoritative
+host. Clients validate every field against Steam lobby state before becoming
+connected.
 
 `HelloRejected` provides an explicit reason: identity, session, slot, capacity,
-stale attempt, membership, or capability mismatch. Duplicate connected attempts
+stale attempt, membership, capability, or game-build mismatch. Duplicate connected attempts
 are idempotent; reconnecting a disconnected Steam identity requires a higher
 attempt and retains its reserved slot while it remains in the lobby.
 

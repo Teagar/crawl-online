@@ -4,6 +4,7 @@ using CrawlOnline.Authoritative;
 using CrawlOnline.Diagnostics;
 using CrawlOnline.Menu;
 using CrawlOnline.Online;
+using CrawlOnline.Protocol;
 using UnityEngine;
 
 namespace CrawlOnline
@@ -22,10 +23,10 @@ namespace CrawlOnline
         private long onlineOperation;
         private ulong[] friendLobbies = new ulong[0];
 
-        public CrawlOnlineRuntime(ManualLogSource logSource)
+        public CrawlOnlineRuntime(ManualLogSource logSource, string gameAssemblySha256)
         {
             log = logSource;
-            session = new SteamLobbySession(log);
+            session = new SteamLobbySession(log, GameBuildFingerprint.Parse(gameAssemblySha256));
             session.FriendLobbiesDiscovered += OnFriendLobbiesDiscovered;
             session.LobbyJoinRequested += OnLobbyJoinRequested;
             synchronizer = new AuthoritativeSynchronizer(session, log);

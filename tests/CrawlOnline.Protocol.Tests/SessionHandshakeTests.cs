@@ -5,6 +5,11 @@ namespace CrawlOnline.Protocol.Tests;
 
 public sealed class SessionHandshakeTests
 {
+    private static readonly GameBuildFingerprint WindowsBuild =
+        GameBuildFingerprint.Parse("e93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e");
+    private static readonly GameBuildFingerprint LinuxBuild =
+        GameBuildFingerprint.Parse("d6f169535cf2123568359550d75fe1a9924948e04d8d0beb2eed7eb187542f84");
+
     [Fact]
     public void HandshakePacketsRoundTrip()
     {
@@ -14,7 +19,8 @@ public sealed class SessionHandshakeTests
             SenderId = 76561198000000001UL,
             Attempt = 7,
             RequestedSlot = byte.MaxValue,
-            Capabilities = SessionCapabilities.Current
+            Capabilities = SessionCapabilities.Current,
+            GameBuild = WindowsBuild
         };
         Assert.True(PacketCodec.TryDecodeHello(PacketCodec.EncodeHello(hello), out SessionHello decodedHello));
         Assert.Equal(hello.SessionNonce, decodedHello.SessionNonce);
@@ -22,6 +28,7 @@ public sealed class SessionHandshakeTests
         Assert.Equal(hello.Attempt, decodedHello.Attempt);
         Assert.Equal(hello.RequestedSlot, decodedHello.RequestedSlot);
         Assert.Equal(hello.Capabilities, decodedHello.Capabilities);
+        Assert.Equal(hello.GameBuild, decodedHello.GameBuild);
 
         var accepted = new SessionAccepted
         {
@@ -30,13 +37,15 @@ public sealed class SessionHandshakeTests
             Attempt = hello.Attempt,
             AssignedSlot = 2,
             MaxPlayers = 4,
-            Capabilities = SessionCapabilities.Current
+            Capabilities = SessionCapabilities.Current,
+            GameBuild = WindowsBuild
         };
         Assert.True(PacketCodec.TryDecodeAccepted(PacketCodec.EncodeAccepted(accepted), out SessionAccepted decodedAccepted));
         Assert.Equal(accepted.SessionNonce, decodedAccepted.SessionNonce);
         Assert.Equal(accepted.HostId, decodedAccepted.HostId);
         Assert.Equal(accepted.Attempt, decodedAccepted.Attempt);
         Assert.Equal(accepted.AssignedSlot, decodedAccepted.AssignedSlot);
+        Assert.Equal(accepted.GameBuild, decodedAccepted.GameBuild);
 
         var rejected = new SessionRejected
         {
@@ -51,7 +60,7 @@ public sealed class SessionHandshakeTests
     [Fact]
     public void HostAllocatesSlotsAndRejectsFifthPlayer()
     {
-        var roster = new SessionRoster(100, 500, 4);
+        var roster = Roster();
         for (ulong peer = 101; peer <= 103; peer++)
         {
             Assert.True(roster.TryAccept(peer, Hello(peer, 500, 1), out SessionAccepted accepted, out _));
@@ -65,7 +74,7 @@ public sealed class SessionHandshakeTests
     [Fact]
     public void HostRejectsSpoofedStaleAndIncompatibleHello()
     {
-        var roster = new SessionRoster(100, 500, 4);
+        var roster = Roster();
         SessionHello spoofed = Hello(999, 500, 1);
         Assert.False(roster.TryAccept(101, spoofed, out _, out SessionRejected identity));
         Assert.Equal(HandshakeRejectReason.InvalidIdentity, identity.Reason);
@@ -74,6 +83,16 @@ public sealed class SessionHandshakeTests
         incompatible.Capabilities = 0;
         Assert.False(roster.TryAccept(101, incompatible, out _, out SessionRejected capabilities));
         Assert.Equal(HandshakeRejectReason.IncompatibleCapabilities, capabilities.Reason);
+
+        SessionHello differentBuild = Hello(101, 500, 1);
+        differentBuild.GameBuild = LinuxBuild;
+        Assert.False(roster.TryAccept(101, differentBuild, out _, out SessionRejected gameBuild));
+        Assert.Equal(HandshakeRejectReason.IncompatibleGameBuild, gameBuild.Reason);
+
+        SessionHello missingBuild = Hello(101, 500, 1);
+        missingBuild.GameBuild = new GameBuildFingerprint();
+        Assert.False(roster.TryAccept(101, missingBuild, out _, out SessionRejected missing));
+        Assert.Equal(HandshakeRejectReason.IncompatibleGameBuild, missing.Reason);
 
         Assert.True(roster.TryAccept(101, Hello(101, 500, 2), out _, out _));
         Assert.True(roster.MarkDisconnected(101));
@@ -84,7 +103,7 @@ public sealed class SessionHandshakeTests
     [Fact]
     public void ReconnectRetainsSlotWithNewAttempt()
     {
-        var roster = new SessionRoster(100, 500, 4);
+        var roster = Roster();
         Assert.True(roster.TryAccept(101, Hello(101, 500, 1), out SessionAccepted first, out _));
         Assert.True(roster.MarkDisconnected(101));
         Assert.True(roster.TryAccept(101, Hello(101, 500, 2), out SessionAccepted reconnected, out _));
@@ -95,7 +114,7 @@ public sealed class SessionHandshakeTests
     [Fact]
     public void DisconnectedPeerCannotAuthorizeGameplayUntilNewHello()
     {
-        var roster = new SessionRoster(100, 500, 4);
+        var roster = Roster();
         Assert.True(roster.TryAccept(101, Hello(101, 500, 1), out SessionAccepted first, out _));
         Assert.True(roster.TryGetSlot(101, out byte connectedSlot));
         Assert.Equal(first.AssignedSlot, connectedSlot);
@@ -111,7 +130,7 @@ public sealed class SessionHandshakeTests
     [Fact]
     public void ConnectedPeerSlotsExcludeDisconnectedReservations()
     {
-        var roster = new SessionRoster(100, 500, 4);
+        var roster = Roster();
         Assert.True(roster.TryAccept(102, Hello(102, 500, 1), out SessionAccepted first, out _));
         Assert.True(roster.TryAccept(101, Hello(101, 500, 1), out SessionAccepted second, out _));
         Assert.Equal(new byte[] { first.AssignedSlot, second.AssignedSlot }, roster.GetConnectedPeerSlots());
@@ -130,11 +149,13 @@ public sealed class SessionHandshakeTests
             Attempt = 3,
             AssignedSlot = 1,
             MaxPlayers = 4,
-            Capabilities = SessionCapabilities.Current
+            Capabilities = SessionCapabilities.Current,
+            GameBuild = WindowsBuild
         };
-        Assert.True(SessionRoster.ValidateAcceptance(accepted, 100, 500, 3));
+        Assert.True(SessionRoster.ValidateAcceptance(accepted, 100, 500, 3, WindowsBuild));
+        Assert.False(SessionRoster.ValidateAcceptance(accepted, 100, 500, 3, LinuxBuild));
         accepted.SessionNonce++;
-        Assert.False(SessionRoster.ValidateAcceptance(accepted, 100, 500, 3));
+        Assert.False(SessionRoster.ValidateAcceptance(accepted, 100, 500, 3, WindowsBuild));
     }
 
     private static SessionHello Hello(ulong sender, ulong nonce, uint attempt)
@@ -145,7 +166,13 @@ public sealed class SessionHandshakeTests
             SessionNonce = nonce,
             Attempt = attempt,
             RequestedSlot = byte.MaxValue,
-            Capabilities = SessionCapabilities.Current
+            Capabilities = SessionCapabilities.Current,
+            GameBuild = WindowsBuild
         };
+    }
+
+    private static SessionRoster Roster()
+    {
+        return new SessionRoster(100, 500, 4, WindowsBuild);
     }
 }

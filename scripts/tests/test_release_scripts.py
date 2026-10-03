@@ -30,6 +30,7 @@ assert 'audit-release-package.py' in packager
 assert '[BepInPlugin(Id, Name, LoaderVersion)]' in bootstrap_source
 assert 'LoaderVersion = "0.2.0"' in bootstrap_source
 assert 'Version = "0.2.0-alpha.1"' in bootstrap_source
+assert 'new object[] { Logger, gameBuildFingerprint }' in bootstrap_source
 assert 'multiplayer gameplay end-to-end validated' in docs
 assert '.crawl-online-backup.' in linux and 'activation_started=true' in linux
 assert '.crawl-online-backup-' in windows and '$activationStarted = $true' in windows

@@ -13,12 +13,15 @@ namespace CrawlOnline
     {
         private const int Channel = 7;
         private const int MaxPacketSize = 64 * 1024;
-        private const string SessionProtocolVersion = "4";
+        private const string SessionProtocolVersion = "5";
         private const string LobbyPacketProtocolKey = "crawl-online-protocol";
         private const string LobbySessionProtocolKey = "crawl-online-session-protocol";
         private const string LobbyBuildKey = "crawl-online-build";
+        private const string LobbyGameBuildKey = "crawl-online-game-build";
         private const string LobbyNonceKey = "crawl-online-session-nonce";
         private readonly ManualLogSource log;
+        private readonly GameBuildFingerprint gameBuild;
+        private readonly string gameBuildMetadata;
         private readonly byte[] receiveBuffer = new byte[MaxPacketSize];
         private readonly CallResult<LobbyCreated_t> lobbyCreated;
         private readonly CallResult<LobbyEnter_t> lobbyEntered;
@@ -52,9 +55,12 @@ namespace CrawlOnline
         public event Action<long, ulong[]> FriendLobbiesDiscovered;
         public event Action<ulong> LobbyJoinRequested;
 
-        public SteamLobbySession(ManualLogSource logSource)
+        public SteamLobbySession(ManualLogSource logSource, GameBuildFingerprint localGameBuild)
         {
+            if (localGameBuild.IsEmpty) throw new ArgumentOutOfRangeException("localGameBuild");
             log = logSource;
+            gameBuild = localGameBuild;
+            gameBuildMetadata = localGameBuild.ToString();
             lobbyCreated = CallResult<LobbyCreated_t>.Create(OnLobbyCreated);
             lobbyEntered = CallResult<LobbyEnter_t>.Create(OnLobbyEntered);
             lobbyMatches = CallResult<LobbyMatchList_t>.Create(OnLobbyMatchList);
@@ -173,6 +179,8 @@ namespace CrawlOnline
                 SessionProtocolVersion, ELobbyComparison.k_ELobbyComparisonEqual);
             SteamMatchmaking.AddRequestLobbyListStringFilter(LobbyBuildKey,
                 CrawlOnlineRuntime.Version, ELobbyComparison.k_ELobbyComparisonEqual);
+            SteamMatchmaking.AddRequestLobbyListStringFilter(LobbyGameBuildKey,
+                gameBuildMetadata, ELobbyComparison.k_ELobbyComparisonEqual);
             SteamMatchmaking.AddRequestLobbyListFilterSlotsAvailable(1);
             SteamMatchmaking.AddRequestLobbyListResultCountFilter(20);
             SetHudStatus(SessionHudStatus.Offline, "Looking for compatible friend lobbies…");
@@ -355,12 +363,13 @@ namespace CrawlOnline
             lobbyId = new CSteamID(result.m_ulSteamIDLobby);
             ownerId = SteamUser.GetSteamID();
             sessionNonce = CreateNonce();
-            roster = new SessionRoster(ownerId.m_SteamID, sessionNonce, 4);
+            roster = new SessionRoster(ownerId.m_SteamID, sessionNonce, 4, gameBuild);
             receiveWindow = new SequenceWindow(sessionNonce);
             localSlot = 0;
             SteamMatchmaking.SetLobbyData(lobbyId, LobbyPacketProtocolKey, PacketCodec.ProtocolVersion.ToString(CultureInfo.InvariantCulture));
             SteamMatchmaking.SetLobbyData(lobbyId, LobbySessionProtocolKey, SessionProtocolVersion);
             SteamMatchmaking.SetLobbyData(lobbyId, LobbyBuildKey, CrawlOnlineRuntime.Version);
+            SteamMatchmaking.SetLobbyData(lobbyId, LobbyGameBuildKey, gameBuildMetadata);
             SteamMatchmaking.SetLobbyData(lobbyId, LobbyNonceKey, sessionNonce.ToString("x16", CultureInfo.InvariantCulture));
             log.LogInfo("Hosting authoritative lobby " + lobbyId + " as slot 0 with session nonce " +
                         sessionNonce.ToString("x16", CultureInfo.InvariantCulture) +
@@ -427,6 +436,7 @@ namespace CrawlOnline
             string protocol = SteamMatchmaking.GetLobbyData(lobbyId, LobbyPacketProtocolKey);
             string sessionProtocol = SteamMatchmaking.GetLobbyData(lobbyId, LobbySessionProtocolKey);
             string build = SteamMatchmaking.GetLobbyData(lobbyId, LobbyBuildKey);
+            string remoteGameBuild = SteamMatchmaking.GetLobbyData(lobbyId, LobbyGameBuildKey);
             string nonce = SteamMatchmaking.GetLobbyData(lobbyId, LobbyNonceKey);
             if (protocol != PacketCodec.ProtocolVersion.ToString(CultureInfo.InvariantCulture) ||
                 sessionProtocol != SessionProtocolVersion ||
@@ -436,6 +446,13 @@ namespace CrawlOnline
             {
                 log.LogError("Incompatible or incomplete lobby protocol metadata.");
                 SetHudStatus(SessionHudStatus.Error, "Lobby version is incompatible.");
+                Leave();
+                return;
+            }
+            if (!GameBuildFingerprint.MatchesMetadata(gameBuild, remoteGameBuild))
+            {
+                log.LogError("Lobby Crawl game-build fingerprint is incompatible or missing.");
+                SetHudStatus(SessionHudStatus.Error, "Crawl build differs. Both players must use the same depot.");
                 Leave();
                 return;
             }
@@ -495,7 +512,8 @@ namespace CrawlOnline
             {
                 SessionAccepted accepted;
                 if (!PacketCodec.TryDecodeAccepted(packet, out accepted) ||
-                    !SessionRoster.ValidateAcceptance(accepted, ownerId.m_SteamID, sessionNonce, localAttempt))
+                    !SessionRoster.ValidateAcceptance(accepted, ownerId.m_SteamID, sessionNonce, localAttempt,
+                        gameBuild))
                 {
                     log.LogError("Rejected invalid host acceptance from " + remote);
                     Leave();
@@ -640,7 +658,8 @@ namespace CrawlOnline
                 SenderId = SteamUser.GetSteamID().m_SteamID,
                 Attempt = localAttempt,
                 RequestedSlot = localSlot,
-                Capabilities = SessionCapabilities.Current
+                Capabilities = SessionCapabilities.Current,
+                GameBuild = gameBuild
             };
             Send(ownerId, PacketCodec.EncodeHello(hello), EP2PSend.k_EP2PSendReliable);
             log.LogInfo("Sent authenticated hello attempt " + localAttempt + " to host " + ownerId);

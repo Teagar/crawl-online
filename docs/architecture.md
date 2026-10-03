@@ -35,7 +35,8 @@ Crawl already ships Steamworks.NET APIs required by the mod:
 Protocol packets carry a magic value and explicit version. P2P requests are accepted only from current lobby members.
 
 Application handshake adds a per-lobby random nonce, Steam sender identity,
-monotonic connection attempt, capability negotiation, and host-assigned slot.
+monotonic connection attempt, exact verified game-assembly fingerprint,
+capability negotiation, and host-assigned slot.
 Opening a Steam P2P transport does not authenticate gameplay state by itself.
 See [session-protocol.md](session-protocol.md).
 

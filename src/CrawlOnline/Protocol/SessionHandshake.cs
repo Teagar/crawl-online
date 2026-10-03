@@ -9,7 +9,8 @@ namespace CrawlOnline.Protocol
         LobbyFull = 4,
         StaleAttempt = 5,
         NotLobbyMember = 6,
-        IncompatibleCapabilities = 7
+        IncompatibleCapabilities = 7,
+        IncompatibleGameBuild = 8
     }
 
     public static class SessionCapabilities
@@ -26,6 +27,7 @@ namespace CrawlOnline.Protocol
         public uint Attempt;
         public byte RequestedSlot;
         public uint Capabilities;
+        public GameBuildFingerprint GameBuild;
     }
 
     public struct SessionAccepted
@@ -36,6 +38,7 @@ namespace CrawlOnline.Protocol
         public byte AssignedSlot;
         public byte MaxPlayers;
         public uint Capabilities;
+        public GameBuildFingerprint GameBuild;
     }
 
     public struct SessionRejected

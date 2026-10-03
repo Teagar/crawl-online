@@ -104,7 +104,7 @@ host request that is still awaiting its Steam callback. A successful late
 callback is immediately discarded instead of exposing an orphan lobby.
 
 `JOIN FRIEND` requests only lobbies whose packet protocol, session protocol,
-build, and available-slot metadata match. Results are additionally restricted to
+mod build, exact game-assembly fingerprint, and available-slot metadata match. Results are additionally restricted to
 lobbies owned by an immediate Steam friend, normalized into a stable order, and
 shown as identity-free `FRIEND GAME 1..3` rows. The empty result offers
 `REFRESH` and `BACK` rather than pretending a lobby exists.
