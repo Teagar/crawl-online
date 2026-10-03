@@ -48,8 +48,58 @@ loader_entrypoint_present() {
 }
 printf 'Detected Crawl platform: %s\n' "$platform"
 
-work=""; stage=""; backup=""; activation_started=false; activation_complete=false
+entrypoint_config="$game_dir/BepInEx/config/BepInEx.cfg"
+late_entrypoint_configured() {
+  [[ -f "$entrypoint_config" ]] || return 1
+  python3 - "$entrypoint_config" <<'PY'
+import configparser,sys
+parser=configparser.RawConfigParser()
+parser.optionxform=str
+try:
+ parser.read(sys.argv[1], encoding='utf-8')
+ section='Preloader.Entrypoint'
+ expected={'Assembly':'Assembly-CSharp.dll','Type':'SystemSteam','Method':'Awake'}
+ if not parser.has_section(section): raise SystemExit(1)
+ raise SystemExit(0 if all(parser.get(section,key,fallback='').strip()==value for key,value in expected.items()) else 1)
+except (configparser.Error, OSError, UnicodeError):
+ raise SystemExit(1)
+PY
+}
+configure_late_entrypoint() {
+  mkdir -p "$(dirname "$entrypoint_config")"
+  python3 - "$entrypoint_config" <<'PY'
+import pathlib,re,sys
+path=pathlib.Path(sys.argv[1])
+text=path.read_text(encoding='utf-8') if path.exists() else ''
+newline='\r\n' if '\r\n' in text else '\n'
+lines=text.splitlines()
+section='Preloader.Entrypoint'
+expected={'Assembly':'Assembly-CSharp.dll','Type':'SystemSteam','Method':'Awake'}
+start=next((i for i,line in enumerate(lines) if line.strip().lower()==f'[{section.lower()}]'),None)
+if start is None:
+ if lines and lines[-1].strip(): lines.append('')
+ lines.extend([f'[{section}]']+[f'{key} = {value}' for key,value in expected.items()])
+else:
+ end=next((i for i in range(start+1,len(lines)) if re.match(r'^\s*\[[^]]+\]\s*$',lines[i])),len(lines))
+ found=set()
+ for i in range(start+1,end):
+  match=re.match(r'^(\s*)(Assembly|Type|Method)(\s*=).*$' ,lines[i],re.I)
+  if match:
+   key=next(key for key in expected if key.lower()==match.group(2).lower())
+   lines[i]=f'{match.group(1)}{key}{match.group(3)} {expected[key]}'
+   found.add(key)
+ for key,value in expected.items():
+  if key not in found:
+   lines.insert(end,f'{key} = {value}'); end+=1
+path.write_text(newline.join(lines)+newline,encoding='utf-8')
+PY
+}
+
+work=""; stage=""; backup=""; entrypoint_backup=""; entrypoint_config_existed=false; entrypoint_changed=false; activation_started=false; activation_complete=false
 cleanup() {
+  if [[ "$entrypoint_changed" == true && "$activation_complete" != true ]]; then
+    if [[ "$entrypoint_config_existed" == true ]]; then cp "$entrypoint_backup" "$entrypoint_config"; else rm -f "$entrypoint_config"; fi
+  fi
   if [[ "$activation_started" == true && "$activation_complete" != true ]]; then
     rm -f "$plugin_dir/CrawlOnline.dll" "$plugin_dir/CrawlOnline.Runtime.dll" "$state"
     for old in CrawlOnline.dll CrawlOnline.Runtime.dll .crawl-online-install.json; do
@@ -58,6 +108,7 @@ cleanup() {
   fi
   [[ -n "$stage" ]] && rm -rf "$stage"
   [[ -n "$backup" ]] && rm -rf "$backup"
+  [[ -n "$entrypoint_backup" ]] && rm -f "$entrypoint_backup"
   [[ -n "$work" ]] && rm -rf "$work"
   return 0
 }
@@ -140,7 +191,10 @@ PY
   loader_entrypoint_present && entrypoint_present=true
   [[ "$core_present" == true ]] && printf 'BepInEx core: present\n' || printf 'BepInEx core: missing\n'
   [[ "$entrypoint_present" == true ]] && printf 'BepInEx %s entrypoint: present\n' "$loader_key" || printf 'BepInEx %s entrypoint: missing\n' "$loader_key"
-  if [[ "$installed" == true && ( "$core_present" != true || "$entrypoint_present" != true ) ]]; then
+  late_entrypoint=false; late_entrypoint_configured && late_entrypoint=true
+  [[ "$late_entrypoint" == true ]] && printf 'BepInEx late Crawl entrypoint: configured\n' || printf 'BepInEx late Crawl entrypoint: MISSING OR INCORRECT\n'
+  [[ "$platform" != proton ]] || printf 'Required Steam launch option: WINEDLLOVERRIDES="winhttp=n,b" %%command%%\n'
+  if [[ "$installed" == true && ( "$core_present" != true || "$entrypoint_present" != true || "$late_entrypoint" != true ) ]]; then
     printf 'Installed Crawl Online has an incomplete or incompatible BepInEx loader.\n' >&2; exit 1
   fi
   exit 0
@@ -162,6 +216,12 @@ else
   loader_entrypoint_present || { printf 'Existing BepInEx lacks the %s entrypoint; it was not changed.\n' "$loader_key" >&2; exit 1; }
 fi
 loader_entrypoint_present || { printf 'BepInEx %s entrypoint was not installed.\n' "$loader_key" >&2; exit 1; }
+if [[ -f "$entrypoint_config" ]]; then
+  entrypoint_config_existed=true; entrypoint_backup="$(mktemp)"; cp "$entrypoint_config" "$entrypoint_backup"
+fi
+entrypoint_changed=true
+configure_late_entrypoint
+late_entrypoint_configured || { printf 'Could not configure the required late Crawl BepInEx entrypoint.\n' >&2; exit 1; }
 mkdir -p "$plugin_dir"
 stage="$(mktemp -d "$plugin_dir/.crawl-online-stage.XXXXXX")"
 backup="$(mktemp -d "$plugin_dir/.crawl-online-backup.XXXXXX")"
@@ -187,5 +247,5 @@ activation_complete=true
 if [[ "$platform" == linux ]]; then
   printf 'Crawl Online installed for native Linux. Steam launch option (once): ./run_bepinex.sh ./Crawl.x86_64 # %%command%%\n'
 else
-  printf 'Crawl Online installed for Crawl Windows x86 via Proton. No Linux launch-option wrapper is required.\n'
+  printf 'Crawl Online installed for Crawl Windows x86 via Proton. Required Steam launch option: WINEDLLOVERRIDES="winhttp=n,b" %%command%%\n'
 fi

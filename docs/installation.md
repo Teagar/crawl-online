@@ -45,8 +45,17 @@ BepInEx package:
 
 - Native Linux uses `linux-x64` and prints the one-time Steam launch option
   `./run_bepinex.sh ./Crawl.x86_64 # %command%`.
-- Proton uses the Windows `win-x86` Doorstop/BepInEx package. Start Crawl normally
-  through Steam; no Linux wrapper launch option is required.
+- Proton uses the Windows `win-x86` Doorstop/BepInEx package. Set this Steam launch
+  option before starting Crawl through Steam:
+
+  ```text
+  WINEDLLOVERRIDES="winhttp=n,b" %command%
+  ```
+
+  The installer also configures BepInEx to start late at
+  `Assembly-CSharp.dll` / `SystemSteam.Awake`. Without the `winhttp` override the
+  mod does not load; using BepInEx's default early entrypoint can leave Crawl on
+  a black screen.
 
 If both executables exist in one directory, auto-detection fails without changing
 files. Review the directory and explicitly pass `--platform linux` or
@@ -72,7 +81,8 @@ alone.
 
 Linux diagnosis records and verifies whether the installation targets native
 Linux or Proton. Use the same `--game-dir` and, for an intentionally mixed
-directory, the same explicit `--platform` used during installation.
+directory, the same explicit `--platform` used during installation. It also
+verifies the required late BepInEx entrypoint and prints the Proton launch option.
 
 Uninstall deletes only `BepInEx/plugins/CrawlOnline/CrawlOnline*.dll` and its small
 Crawl Online state file. It deliberately preserves BepInEx and all other plugins;

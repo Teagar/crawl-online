@@ -35,6 +35,10 @@ assert '.crawl-online-backup.' in linux and 'activation_started=true' in linux
 assert '.crawl-online-backup-' in windows and '$activationStarted = $true' in windows
 for text in ('Crawl.exe', '--platform', 'win-x86', 'winhttp.dll', 'e93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e'):
     assert text in linux
+for text in ('Assembly-CSharp.dll', 'SystemSteam', 'Awake', 'WINEDLLOVERRIDES="winhttp=n,b"'):
+    assert text in linux and text in docs
+for text in ('Test-LateEntrypoint', 'Set-LateEntrypoint', 'Assembly-CSharp.dll', 'SystemSteam', 'Awake', 'MISSING OR INCORRECT'):
+    assert text in windows
 print('release installer static contract checks passed')
 
 
@@ -120,9 +124,11 @@ with tempfile.TemporaryDirectory() as temp:
     proton = temp / 'proton-game'
     (proton / 'Crawl_Data/Managed').mkdir(parents=True)
     (proton / 'BepInEx/plugins/OtherMod').mkdir(parents=True)
+    (proton / 'BepInEx/config').mkdir(parents=True)
     (proton / 'Crawl.exe').write_bytes(windows_executable())
     (proton / 'Crawl_Data/Managed/Assembly-CSharp.dll').write_bytes(b'legitimate Windows test fixture')
     (proton / 'BepInEx/plugins/OtherMod/keep.txt').write_text('keep')
+    (proton / 'BepInEx/config/BepInEx.cfg').write_text('[Logging.Console]\nEnabled = false\n\n[Preloader.Entrypoint]\nAssembly = UnityEngine.dll\nType = Application\nMethod = .cctor\n')
     proton_common = ['--game-dir', str(proton), '--allow-unknown-game']
     fake_bin = temp / 'bin'
     fake_bin.mkdir()
@@ -143,9 +149,23 @@ cp "$CRAWL_ONLINE_TEST_DOWNLOAD" "$out"
     assert proton_install.returncode == 0, proton_install.stdout + proton_install.stderr
     proton_state = json.loads((proton / 'BepInEx/plugins/CrawlOnline/.crawl-online-install.json').read_text())
     assert proton_state['platform'] == 'proton' and proton_state['loader'] == 'win-x86'
+    proton_config = (proton / 'BepInEx/config/BepInEx.cfg').read_text()
+    assert 'Assembly = Assembly-CSharp.dll' in proton_config
+    assert 'Type = SystemSteam' in proton_config
+    assert 'Method = Awake' in proton_config
+    assert '[Logging.Console]\nEnabled = false' in proton_config
     proton_diagnostic = subprocess.run([str(installer), 'diagnose', *proton_common], check=True, stdout=subprocess.PIPE, text=True)
     assert proton_diagnostic.stdout.count('verified') == 2 and 'win-x86 entrypoint: present' in proton_diagnostic.stdout
+    assert 'late Crawl entrypoint: configured' in proton_diagnostic.stdout
+    assert 'WINEDLLOVERRIDES="winhttp=n,b" %command%' in proton_diagnostic.stdout
     assert (proton / 'winhttp.dll').is_file() and not (proton / 'run_bepinex.sh').exists()
+    bad_config = '[Preloader.Entrypoint]\nAssembly = UnityEngine.dll\nType = Application\nMethod = .cctor\n'
+    (proton / 'BepInEx/config/BepInEx.cfg').write_text(bad_config)
+    bad_entrypoint = subprocess.run([str(installer), 'diagnose', *proton_common], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert bad_entrypoint.returncode != 0 and 'MISSING OR INCORRECT' in bad_entrypoint.stdout
+    failed_proton_update = subprocess.run([str(installer), 'update', '--package', str(release_dir), *proton_common], env=proton_environment | {'CRAWL_ONLINE_TEST_FAIL_AFTER_FIRST_ACTIVATE': '1'}, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert failed_proton_update.returncode == 97
+    assert (proton / 'BepInEx/config/BepInEx.cfg').read_text() == bad_config
     subprocess.run([str(installer), 'update', '--package', str(release_dir), *proton_common], check=True, stdout=subprocess.PIPE, text=True)
     subprocess.run([str(installer), 'uninstall', *proton_common], check=True, stdout=subprocess.PIPE, text=True)
     assert not (proton / 'BepInEx/plugins/CrawlOnline').exists()

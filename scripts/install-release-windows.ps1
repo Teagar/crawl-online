@@ -12,9 +12,51 @@ $ErrorActionPreference = 'Stop'
 $KnownAssemblyHash = 'e93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e'
 $PluginDir = Join-Path $GameDir 'BepInEx\plugins\CrawlOnline'
 $State = Join-Path $PluginDir '.crawl-online-install.json'
+$EntrypointConfig = Join-Path $GameDir 'BepInEx\config\BepInEx.cfg'
 $TemporaryDirectory = $null
 
 function Get-Sha256([string]$Path) { return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant() }
+function Test-LateEntrypoint {
+    if (-not (Test-Path -LiteralPath $EntrypointConfig -PathType Leaf)) { return $false }
+    $lines = Get-Content -LiteralPath $EntrypointConfig
+    $start = -1
+    for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i].Trim() -ieq '[Preloader.Entrypoint]') { $start = $i; break } }
+    if ($start -lt 0) { return $false }
+    $end = $lines.Count
+    for ($i = $start + 1; $i -lt $lines.Count; $i++) { if ($lines[$i] -match '^\s*\[[^]]+\]\s*$') { $end = $i; break } }
+    $expected = @{ Assembly = 'Assembly-CSharp.dll'; Type = 'SystemSteam'; Method = 'Awake' }
+    foreach ($key in $expected.Keys) {
+        $found = $false
+        for ($i = $start + 1; $i -lt $end; $i++) {
+            if ($lines[$i] -match ('^\s*' + [regex]::Escape($key) + '\s*=\s*(.*?)\s*$')) { $found = $Matches[1] -ceq $expected[$key]; break }
+        }
+        if (-not $found) { return $false }
+    }
+    return $true
+}
+function Set-LateEntrypoint {
+    $directory = Split-Path -Parent $EntrypointConfig
+    New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    $lines = [Collections.Generic.List[string]]::new()
+    if (Test-Path -LiteralPath $EntrypointConfig) { foreach ($line in (Get-Content -LiteralPath $EntrypointConfig)) { $lines.Add($line) } }
+    $start = -1
+    for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i].Trim() -ieq '[Preloader.Entrypoint]') { $start = $i; break } }
+    if ($start -lt 0) {
+        if ($lines.Count -gt 0 -and $lines[$lines.Count - 1].Trim()) { $lines.Add('') }
+        $lines.Add('[Preloader.Entrypoint]'); $start = $lines.Count - 1
+    }
+    $end = $lines.Count
+    for ($i = $start + 1; $i -lt $lines.Count; $i++) { if ($lines[$i] -match '^\s*\[[^]]+\]\s*$') { $end = $i; break } }
+    $expected = [ordered]@{ Assembly = 'Assembly-CSharp.dll'; Type = 'SystemSteam'; Method = 'Awake' }
+    foreach ($key in $expected.Keys) {
+        $found = $false
+        for ($i = $start + 1; $i -lt $end; $i++) {
+            if ($lines[$i] -match ('^\s*' + [regex]::Escape($key) + '\s*=')) { $lines[$i] = "$key = $($expected[$key])"; $found = $true; break }
+        }
+        if (-not $found) { $lines.Insert($end, "$key = $($expected[$key])"); $end++ }
+    }
+    [IO.File]::WriteAllLines($EntrypointConfig, $lines, [Text.UTF8Encoding]::new($false))
+}
 function Get-ReleaseDirectory([string]$Path) {
     if (-not $Path) { throw 'A release package is required for install or update.' }
     if (Test-Path -LiteralPath $Path -PathType Container) { return (Resolve-Path -LiteralPath $Path).Path }
@@ -56,7 +98,8 @@ try {
         exit 0
     }
     if ($Command -eq 'diagnose') {
-        if (Test-Path -LiteralPath $State) {
+        $isInstalled = Test-Path -LiteralPath $State
+        if ($isInstalled) {
             $installed = Get-Content -Raw -LiteralPath $State | ConvertFrom-Json
             $failed = $false
             foreach ($property in $installed.plugins.psobject.Properties) {
@@ -68,6 +111,9 @@ try {
             if ($failed) { throw 'Crawl Online plugin integrity check failed.' }
         } else { Write-Host 'Crawl Online is not installed.' }
         if (Test-Path -LiteralPath (Join-Path $GameDir 'BepInEx\core\BepInEx.dll')) { Write-Host 'BepInEx core: present' } else { Write-Host 'BepInEx core: missing' }
+        $lateEntrypoint = Test-LateEntrypoint
+        Write-Host "BepInEx late Crawl entrypoint: $(if ($lateEntrypoint) { 'configured' } else { 'MISSING OR INCORRECT' })"
+        if ($isInstalled -and -not $lateEntrypoint) { throw 'Installed Crawl Online has an incomplete or incompatible BepInEx loader.' }
         exit 0
     }
     $ReleaseDir = Get-ReleaseDirectory $Package
@@ -90,7 +136,13 @@ try {
     New-Item -ItemType Directory -Path $stage, $backup | Out-Null
     $names = @('CrawlOnline.dll', 'CrawlOnline.Runtime.dll', '.crawl-online-install.json')
     $activationStarted = $false
+    $entrypointChanged = $false
+    $entrypointExisted = Test-Path -LiteralPath $EntrypointConfig
+    $entrypointBackup = if ($entrypointExisted) { [IO.File]::ReadAllBytes($EntrypointConfig) } else { $null }
     try {
+        Set-LateEntrypoint
+        $entrypointChanged = $true
+        if (-not (Test-LateEntrypoint)) { throw 'Could not configure the required late Crawl BepInEx entrypoint.' }
         Copy-Item -Force (Join-Path $ReleaseDir 'plugins\CrawlOnline.dll'), (Join-Path $ReleaseDir 'plugins\CrawlOnline.Runtime.dll') -Destination $stage
         @{ version = $Manifest.version; plugins = $Manifest.plugins } | ConvertTo-Json -Depth 3 | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $stage '.crawl-online-install.json')
         $activationStarted = $true
@@ -102,6 +154,9 @@ try {
             if ($env:CRAWL_ONLINE_TEST_FAIL_AFTER_FIRST_ACTIVATE -eq '1' -and $activated -eq 1) { throw 'Injected activation failure for rollback test.' }
         }
     } catch {
+        if ($entrypointChanged) {
+            if ($entrypointExisted) { [IO.File]::WriteAllBytes($EntrypointConfig, $entrypointBackup) } else { Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath $EntrypointConfig }
+        }
         if ($activationStarted) {
             foreach ($name in $names) { Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath (Join-Path $PluginDir $name); $old = Join-Path $backup $name; if (Test-Path -LiteralPath $old) { Move-Item -LiteralPath $old -Destination (Join-Path $PluginDir $name) } }
         }
