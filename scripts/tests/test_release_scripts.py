@@ -4,6 +4,7 @@ from pathlib import Path
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import zipfile
@@ -13,6 +14,7 @@ linux = (root / 'scripts/install-release-linux.sh').read_text()
 windows = (root / 'scripts/install-release-windows.ps1').read_text()
 windows_diagnostics = (root / 'scripts/collect-diagnostics-windows.ps1').read_text()
 windows_diagnostics_test = (root / 'scripts/tests/test_windows_diagnostics.ps1').read_text()
+windows_installer_test = (root / 'scripts/tests/test_windows_installer.ps1').read_text()
 packager = (root / 'scripts/package-release.sh').read_text()
 auditor = root / 'scripts/audit-release-package.py'
 docs = (root / 'docs/installation.md').read_text()
@@ -50,6 +52,8 @@ assert 'collect-diagnostics-windows.ps1' in packager
 assert 'WINDOWS-VALIDATION.md' in packager
 for text in ('Write-PeX86', 'PrivateName', 'redacted-long-id', 'forbidden binary or save'):
     assert text in windows_diagnostics_test
+for text in ('Clean install', "Invoke-Installer 'update'", 'CRAWL_ONLINE_TEST_FAIL_AFTER_FIRST_ACTIVATE', "Invoke-Installer 'uninstall'"):
+    assert text in windows_installer_test
 print('release installer static contract checks passed')
 
 
@@ -107,6 +111,18 @@ with tempfile.TemporaryDirectory() as temp:
     release_dir = output / 'CrawlOnline-test-1'
     installer = root / 'scripts/install-release-linux.sh'
     common = ['--game-dir', str(game), '--allow-unknown-game']
+
+    unsupported = subprocess.run([str(installer), 'install', '--package', str(release_dir), '--game-dir', str(game)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert unsupported.returncode != 0 and 'Unsupported Crawl linux build' in unsupported.stderr
+    assert not (game / 'BepInEx/plugins/CrawlOnline').exists()
+
+    tampered_release = temp / 'tampered-release'
+    shutil.copytree(release_dir, tampered_release)
+    (tampered_release / 'plugins/CrawlOnline.Runtime.dll').write_bytes(b'tampered package payload')
+    tampered_install = subprocess.run([str(installer), 'install', '--package', str(tampered_release), *common], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert tampered_install.returncode != 0 and 'Package hash mismatch' in tampered_install.stderr
+    assert not (game / 'BepInEx/plugins/CrawlOnline').exists()
+
     install = subprocess.run([str(installer), 'install', '--package', str(release_dir), *common], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert install.returncode == 0, install.stdout + install.stderr
     native_state = json.loads((game / 'BepInEx/plugins/CrawlOnline/.crawl-online-install.json').read_text())
@@ -115,15 +131,44 @@ with tempfile.TemporaryDirectory() as temp:
     assert diagnostic.stdout.count('verified') == 2
     installed = game / 'BepInEx/plugins/CrawlOnline/CrawlOnline.Runtime.dll'
     bootstrap_installed = game / 'BepInEx/plugins/CrawlOnline/CrawlOnline.dll'
+    state_path = game / 'BepInEx/plugins/CrawlOnline/.crawl-online-install.json'
+    legacy_bootstrap, legacy_runtime = b'legacy bootstrap', b'legacy runtime'
+    bootstrap_installed.write_bytes(legacy_bootstrap)
+    installed.write_bytes(legacy_runtime)
+    state_path.write_text(json.dumps({
+        'version': '0.1.0-alpha.1',
+        'platform': 'linux',
+        'loader': 'linux-x64',
+        'plugins': {
+            'CrawlOnline.dll': hashlib.sha256(legacy_bootstrap).hexdigest(),
+            'CrawlOnline.Runtime.dll': hashlib.sha256(legacy_runtime).hexdigest(),
+        },
+    }))
+    subprocess.run([str(installer), 'update', '--package', str(release_dir), *common], check=True, stdout=subprocess.PIPE, text=True)
+    assert bootstrap_installed.read_bytes() == b'bootstrap'
+    assert installed.read_bytes() == b'runtime'
+    assert json.loads(state_path.read_text())['version'] == 'test-1'
+    assert (game / 'BepInEx/plugins/OtherMod/keep.txt').read_text() == 'keep'
+
     before = (bootstrap_installed.read_bytes(), installed.read_bytes())
     rollback_environment = environment | {'CRAWL_ONLINE_TEST_FAIL_AFTER_FIRST_ACTIVATE': '1'}
     rollback = subprocess.run([str(installer), 'update', '--package', str(release_dir), *common], env=rollback_environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert rollback.returncode == 97
     assert (bootstrap_installed.read_bytes(), installed.read_bytes()) == before
+    assert json.loads(state_path.read_text())['version'] == 'test-1'
     installed.write_bytes(b'tampered')
     failed = subprocess.run([str(installer), 'diagnose', *common], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert failed.returncode != 0 and 'MISSING OR MODIFIED' in failed.stdout
     subprocess.run([str(installer), 'update', '--package', str(release_dir), *common], check=True, stdout=subprocess.PIPE, text=True)
+
+    correct_state = state_path.read_text()
+    mismatched_state = json.loads(correct_state)
+    mismatched_state['platform'] = 'proton'
+    state_path.write_text(json.dumps(mismatched_state))
+    wrong_depot = subprocess.run([str(installer), 'diagnose', *common], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert wrong_depot.returncode != 0 and 'does not match the detected game depot' in wrong_depot.stderr
+    state_path.write_text(correct_state)
+
     subprocess.run([str(installer), 'uninstall', *common], check=True, stdout=subprocess.PIPE, text=True)
     assert not (game / 'BepInEx/plugins/CrawlOnline').exists()
     assert (game / 'BepInEx/plugins/OtherMod/keep.txt').read_text() == 'keep'
@@ -201,4 +246,15 @@ cp "$CRAWL_ONLINE_TEST_DOWNLOAD" "$out"
     wrong = subprocess.run([str(installer), 'install', '--package', str(release_dir), '--game-dir', str(wrong_loader), '--allow-unknown-game'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert wrong.returncode != 0 and 'lacks the win-x86 entrypoint' in wrong.stderr
     assert not (wrong_loader / 'BepInEx/plugins/CrawlOnline').exists()
+
+    wrong_version = temp / 'wrong-version-loader'
+    (wrong_version / 'Crawl_Data/Managed').mkdir(parents=True)
+    (wrong_version / 'BepInEx/core').mkdir(parents=True)
+    (wrong_version / 'Crawl.exe').write_bytes(windows_executable())
+    (wrong_version / 'Crawl_Data/Managed/Assembly-CSharp.dll').write_bytes(b'fixture')
+    (wrong_version / 'BepInEx/core/BepInEx.dll').write_bytes(b'BepInEx 6 incompatible fixture')
+    (wrong_version / 'winhttp.dll').write_bytes(b'x86 doorstop fixture')
+    wrong_version_result = subprocess.run([str(installer), 'install', '--package', str(release_dir), '--game-dir', str(wrong_version), '--allow-unknown-game'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert wrong_version_result.returncode != 0 and 'not 5.4.11' in wrong_version_result.stderr
+    assert not (wrong_version / 'BepInEx/plugins/CrawlOnline').exists()
 print('release package smoke test passed')
