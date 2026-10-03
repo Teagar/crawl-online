@@ -14,5 +14,6 @@
     <Compile Include="../../src/CrawlOnline/Protocol/*.cs" Link="Protocol/%(Filename)%(Extension)" />
     <Compile Include="../../src/CrawlOnline/SessionHudState.cs" Link="SessionHudState.cs" />
     <Compile Include="../../src/CrawlOnline/NativeMenuContract.cs" Link="NativeMenuContract.cs" />
+    <Compile Include="../../src/CrawlOnline/Online/OnlineFlowStateMachine.cs" Link="OnlineFlowStateMachine.cs" />
   </ItemGroup>
 </Project>
