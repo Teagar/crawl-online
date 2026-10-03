@@ -10,7 +10,7 @@ namespace CrawlOnline
 {
     public sealed class CrawlOnlineRuntime
     {
-        public const string Version = "0.1.0";
+        public const string Version = "0.2.0-alpha.1";
         private readonly ManualLogSource log;
         private SteamLobbySession session;
         private DeterminismHarness harness;

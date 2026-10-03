@@ -12,6 +12,7 @@ root = Path(__file__).resolve().parents[2]
 linux = (root / 'scripts/install-release-linux.sh').read_text()
 windows = (root / 'scripts/install-release-windows.ps1').read_text()
 packager = (root / 'scripts/package-release.sh').read_text()
+auditor = root / 'scripts/audit-release-package.py'
 docs = (root / 'docs/installation.md').read_text()
 
 for command in ('install', 'update', 'uninstall', 'diagnose'):
@@ -24,6 +25,7 @@ assert 'BepInEx and every other plugin were preserved' in linux
 assert 'BepInEx and every other plugin were preserved' in windows
 assert 'BepInEx_unix_5.4.11.0.zip' in packager
 assert 'BepInEx_x86_5.4.11.0.zip' in packager
+assert 'audit-release-package.py' in packager
 assert 'multiplayer gameplay end-to-end validated' in docs
 assert '.crawl-online-backup.' in linux and 'activation_started=true' in linux
 assert '.crawl-online-backup-' in windows and '$activationStarted = $true' in windows
@@ -64,6 +66,11 @@ with tempfile.TemporaryDirectory() as temp:
     assert not any(name.endswith(('Assembly-CSharp.dll', 'steam_api.dll', 'Crawl.exe')) for name in names)
     assert manifest['plugins']['CrawlOnline.dll'] == hashlib.sha256(b'bootstrap').hexdigest()
     assert manifest['bepInEx']['linux-x64']['sha256'] == hashlib.sha256(linux_loader.read_bytes()).hexdigest()
+    subprocess.run([str(auditor), str(archive), 'test-1'], check=True, stdout=subprocess.PIPE, text=True)
+    with zipfile.ZipFile(archive, 'a') as mutated:
+        mutated.writestr('CrawlOnline-test-1/proprietary.dll', b'never redistribute')
+    audit = subprocess.run([str(auditor), str(archive), 'test-1'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert audit.returncode != 0 and 'unexpected package contents' in audit.stderr
 
     game = temp / 'game'
     (game / 'Crawl_Data/Managed').mkdir(parents=True)

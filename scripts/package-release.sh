@@ -52,6 +52,7 @@ EOF_MANIFEST
   cd "$OUTPUT"
   rm -f "CrawlOnline-$VERSION.zip"
   zip -qr "CrawlOnline-$VERSION.zip" "CrawlOnline-$VERSION"
+  "$ROOT/scripts/audit-release-package.py" "CrawlOnline-$VERSION.zip" "$VERSION"
   sha256sum "CrawlOnline-$VERSION.zip" > "CrawlOnline-$VERSION.zip.sha256"
 )
 printf 'Release package created: %s/CrawlOnline-%s.zip\n' "$OUTPUT" "$VERSION"

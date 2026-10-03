@@ -13,7 +13,7 @@ namespace CrawlOnline.Bootstrap
     {
         public const string Id = "dev.teagar.crawl-online";
         public const string Name = "Crawl Online";
-        public const string Version = "0.1.0";
+        public const string Version = "0.2.0-alpha.1";
         private const string SupportedUnityVersion = "5.4.2f2";
         private const string SupportedLinuxGameAssemblySha256 = "d6f169535cf2123568359550d75fe1a9924948e04d8d0beb2eed7eb187542f84";
         private const string SupportedWindowsGameAssemblySha256 = "e93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e";

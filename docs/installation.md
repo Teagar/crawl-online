@@ -78,12 +78,17 @@ want its loader.
 ## For release publishers
 
 Build first, then create the release ZIP and its checksum without including Crawl,
-Steam, or BepInEx files:
+Steam, or BepInEx files. Packaging performs a fail-closed allowlist audit of the
+ZIP, manifest, and plugin hashes before writing its checksum:
 
 ```bash
 dotnet build -c Release
 ./scripts/package-release.sh <version> /path/BepInEx_unix_5.4.11.0.zip /path/BepInEx_x86_5.4.11.0.zip
 ```
+
+For example, `v0.2.0-alpha.1` is a local candidate name only until a human
+reviews it and publishes it. Creating a package never creates a Git tag or
+GitHub release, and is not evidence of remote multiplayer validation.
 
 Upload the generated ZIP and `.sha256` as release assets. The package records hashes
 of its two Crawl Online DLLs and of the upstream BepInEx archives; installers download
