@@ -11,6 +11,8 @@ import zipfile
 root = Path(__file__).resolve().parents[2]
 linux = (root / 'scripts/install-release-linux.sh').read_text()
 windows = (root / 'scripts/install-release-windows.ps1').read_text()
+windows_diagnostics = (root / 'scripts/collect-diagnostics-windows.ps1').read_text()
+windows_diagnostics_test = (root / 'scripts/tests/test_windows_diagnostics.ps1').read_text()
 packager = (root / 'scripts/package-release.sh').read_text()
 auditor = root / 'scripts/audit-release-package.py'
 docs = (root / 'docs/installation.md').read_text()
@@ -40,6 +42,14 @@ for text in ('Assembly-CSharp.dll', 'SystemSteam', 'Awake', 'WINEDLLOVERRIDES="w
     assert text in linux and text in docs
 for text in ('Test-LateEntrypoint', 'Set-LateEntrypoint', 'Assembly-CSharp.dll', 'SystemSteam', 'Awake', 'MISSING OR INCORRECT'):
     assert text in windows
+for text in ('Get-PeMachine', 'Protect-DiagnosticText', 'sanitized-bepinex.log', 'PRIVACY.txt', 'Compress-Archive'):
+    assert text in windows_diagnostics
+for forbidden_copy in ('Copy-Item $LogPath', 'Crawl.sav', 'steam_api.dll'):
+    assert forbidden_copy not in windows_diagnostics
+assert 'collect-diagnostics-windows.ps1' in packager
+assert 'WINDOWS-VALIDATION.md' in packager
+for text in ('Write-PeX86', 'PrivateName', 'redacted-long-id', 'forbidden binary or save'):
+    assert text in windows_diagnostics_test
 print('release installer static contract checks passed')
 
 
@@ -72,6 +82,8 @@ with tempfile.TemporaryDirectory() as temp:
         names = set(zipped.namelist())
         manifest = json.loads(zipped.read('CrawlOnline-test-1/CrawlOnline.release.json'))
     assert 'CrawlOnline-test-1/INSTALL.md' in names
+    assert 'CrawlOnline-test-1/WINDOWS-VALIDATION.md' in names
+    assert 'CrawlOnline-test-1/collect-diagnostics-windows.ps1' in names
     assert not any(name.endswith(('Assembly-CSharp.dll', 'steam_api.dll', 'Crawl.exe')) for name in names)
     assert manifest['plugins']['CrawlOnline.dll'] == hashlib.sha256(b'bootstrap').hexdigest()
     assert manifest['bepInEx']['linux-x64']['sha256'] == hashlib.sha256(linux_loader.read_bytes()).hexdigest()

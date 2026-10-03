@@ -22,6 +22,8 @@ expected = {
     "CrawlOnline.release.json",
     "install-release-linux.sh",
     "install-release-windows.ps1",
+    "collect-diagnostics-windows.ps1",
+    "WINDOWS-VALIDATION.md",
     "plugins/CrawlOnline.dll",
     "plugins/CrawlOnline.Runtime.dll",
 }

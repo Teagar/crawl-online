@@ -19,8 +19,9 @@ done
 rm -rf "$STAGE"
 mkdir -p "$STAGE/plugins"
 cp "$BOOTSTRAP" "$RUNTIME" "$STAGE/plugins/"
-cp "$ROOT/scripts/install-release-linux.sh" "$ROOT/scripts/install-release-windows.ps1" "$STAGE/"
+cp "$ROOT/scripts/install-release-linux.sh" "$ROOT/scripts/install-release-windows.ps1" "$ROOT/scripts/collect-diagnostics-windows.ps1" "$STAGE/"
 cp "$ROOT/docs/installation.md" "$STAGE/INSTALL.md"
+cp "$ROOT/docs/windows-validation.md" "$STAGE/WINDOWS-VALIDATION.md"
 chmod +x "$STAGE/install-release-linux.sh"
 
 bootstrap_hash="$(sha256sum "$STAGE/plugins/CrawlOnline.dll" | awk '{print $1}')"

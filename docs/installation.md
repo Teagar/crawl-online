@@ -71,6 +71,7 @@ alone.
 
 ```powershell
 .\install-release-windows.ps1 diagnose
+.\collect-diagnostics-windows.ps1
 .\install-release-windows.ps1 uninstall
 ```
 
@@ -83,6 +84,13 @@ Linux diagnosis records and verifies whether the installation targets native
 Linux or Proton. Use the same `--game-dir` and, for an intentionally mixed
 directory, the same explicit `--platform` used during installation. It also
 verifies the required late BepInEx entrypoint and prints the Proton launch option.
+
+On Windows, `diagnose` reports the executable architecture, known game build,
+loader version, Doorstop presence, late entrypoint, plugin integrity, and log
+availability. `collect-diagnostics-windows.ps1` creates a reviewable ZIP containing
+only generated text and a sanitized BepInEx log excerpt. It excludes binaries,
+saves, raw configuration, credentials, user paths, long Steam/lobby IDs, and
+network addresses. Follow `WINDOWS-VALIDATION.md` and review the text before sharing.
 
 Uninstall deletes only `BepInEx/plugins/CrawlOnline/CrawlOnline*.dll` and its small
 Crawl Online state file. It deliberately preserves BepInEx and all other plugins;

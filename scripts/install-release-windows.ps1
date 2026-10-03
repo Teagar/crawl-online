@@ -73,9 +73,11 @@ function Test-Game {
     if (-not (Test-Path -LiteralPath $exe) -or -not (Test-Path -LiteralPath $assembly)) { throw "Crawl Windows was not found at $GameDir. Pass -GameDir." }
     # PE Machine 0x14c is x86. This prevents installing the required x86 loader into an unexpected executable.
     $stream = [IO.File]::OpenRead($exe); try { $reader = New-Object IO.BinaryReader($stream); $stream.Position = 0x3c; $offset = $reader.ReadInt32(); $stream.Position = $offset + 4; if ($reader.ReadUInt16() -ne 0x14c) { throw 'Crawl.exe is not an x86 executable; nothing was changed.' } } finally { $stream.Dispose() }
+    Write-Host 'Crawl.exe architecture: Windows x86 (PE machine 0x014c)'
     $hash = Get-Sha256 $assembly
     Write-Host "Crawl Assembly-CSharp.dll SHA-256: $hash"
     if ($hash -ne $KnownAssemblyHash -and -not $AllowUnknownGame) { throw 'Unsupported Crawl Windows build. Re-run only after reviewing with -AllowUnknownGame.' }
+    Write-Host "Crawl Windows build: $(if ($hash -eq $KnownAssemblyHash) { 'supported 1.0.1' } else { 'unknown (override enabled)' })"
 }
 function Get-Manifest([string]$ReleaseDir) {
     $manifestPath = Join-Path $ReleaseDir 'CrawlOnline.release.json'
@@ -101,6 +103,7 @@ try {
         $isInstalled = Test-Path -LiteralPath $State
         if ($isInstalled) {
             $installed = Get-Content -Raw -LiteralPath $State | ConvertFrom-Json
+            Write-Host "Crawl Online version: $($installed.version)"
             $failed = $false
             foreach ($property in $installed.plugins.psobject.Properties) {
                 $file = Join-Path $PluginDir $property.Name
@@ -110,9 +113,16 @@ try {
             }
             if ($failed) { throw 'Crawl Online plugin integrity check failed.' }
         } else { Write-Host 'Crawl Online is not installed.' }
-        if (Test-Path -LiteralPath (Join-Path $GameDir 'BepInEx\core\BepInEx.dll')) { Write-Host 'BepInEx core: present' } else { Write-Host 'BepInEx core: missing' }
+        $core = Join-Path $GameDir 'BepInEx\core\BepInEx.dll'
+        if (Test-Path -LiteralPath $core) {
+            $coreVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($core).FileVersion
+            Write-Host "BepInEx core: present$(if ($coreVersion) { " ($coreVersion)" } else { '' })"
+        } else { Write-Host 'BepInEx core: missing' }
+        Write-Host "Windows x86 Doorstop (winhttp.dll): $(if (Test-Path -LiteralPath (Join-Path $GameDir 'winhttp.dll')) { 'present' } else { 'missing' })"
         $lateEntrypoint = Test-LateEntrypoint
         Write-Host "BepInEx late Crawl entrypoint: $(if ($lateEntrypoint) { 'configured' } else { 'MISSING OR INCORRECT' })"
+        $log = Join-Path $GameDir 'BepInEx\LogOutput.log'
+        Write-Host "BepInEx log: $(if (Test-Path -LiteralPath $log) { 'present; use collect-diagnostics-windows.ps1 for a sanitized archive' } else { 'missing (launch Crawl once through Steam)' })"
         if ($isInstalled -and -not $lateEntrypoint) { throw 'Installed Crawl Online has an incomplete or incompatible BepInEx loader.' }
         exit 0
     }
