@@ -54,6 +54,7 @@ namespace CrawlOnline.Protocol
         private uint localInputSequence;
         private uint localInputEventSequence;
         private uint snapshotSequence;
+        private byte requestedSlot = byte.MaxValue;
         private byte localSlot = byte.MaxValue;
 
         public event Action<SessionInputFrame> InputReceived;
@@ -100,7 +101,8 @@ namespace CrawlOnline.Protocol
             localId = clientId;
             hostId = authoritativeHostId;
             sessionNonce = nonce;
-            localSlot = requestedSlot;
+            this.requestedSlot = requestedSlot;
+            localSlot = byte.MaxValue;
             receiveWindow = new SequenceWindow(nonce);
             localAttempt = 1;
             return transport.Send(hostId, PacketCodec.EncodeHello(new SessionHello
@@ -108,7 +110,22 @@ namespace CrawlOnline.Protocol
                 SessionNonce = nonce,
                 SenderId = clientId,
                 Attempt = localAttempt,
-                RequestedSlot = requestedSlot,
+                RequestedSlot = this.requestedSlot,
+                Capabilities = SessionCapabilities.Current,
+                GameBuild = gameBuild
+            }), SessionDelivery.Reliable);
+        }
+
+        public bool ReconnectClient()
+        {
+            if (!IsActive || IsHost || localId == 0 || hostId == 0) return false;
+            localAttempt = Next(localAttempt);
+            return transport.Send(hostId, PacketCodec.EncodeHello(new SessionHello
+            {
+                SessionNonce = sessionNonce,
+                SenderId = localId,
+                Attempt = localAttempt,
+                RequestedSlot = localSlot == byte.MaxValue ? requestedSlot : localSlot,
                 Capabilities = SessionCapabilities.Current,
                 GameBuild = gameBuild
             }), SessionDelivery.Reliable);
@@ -332,6 +349,7 @@ namespace CrawlOnline.Protocol
             localInputSequence = 0;
             localInputEventSequence = 0;
             snapshotSequence = 0;
+            requestedSlot = byte.MaxValue;
             localSlot = byte.MaxValue;
             peerAcknowledgements.Clear();
             peerSnapshotHistory.Clear();
