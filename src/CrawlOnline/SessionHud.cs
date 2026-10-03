@@ -8,9 +8,8 @@ namespace CrawlOnline
     {
         private const float ExpandedWidth = 320f;
         private const float ExpandedHeight = 184f;
-        private const float CompactHeight = 128f;
-        private const float MinimizedWidth = 250f;
-        private const float MinimizedHeight = 38f;
+        private const float ContextWidth = 300f;
+        private const float ContextHeight = 38f;
 
         private static readonly Color Shadow = new Color(0.01f, 0.01f, 0.015f, 0.82f);
         private static readonly Color Panel = new Color(0.055f, 0.047f, 0.05f, 0.96f);
@@ -24,7 +23,8 @@ namespace CrawlOnline
         private static readonly Color Bad = new Color(0.72f, 0.22f, 0.18f, 1f);
 
         private bool minimized;
-        private bool tutorialVisible = true;
+        private bool detailsVisible;
+        private string notice;
         private int styledScale;
         private Font styledFont;
         private GUIStyle titleStyle;
@@ -40,20 +40,28 @@ namespace CrawlOnline
 
         public void ToggleTutorial()
         {
-            tutorialVisible = !tutorialVisible;
+            detailsVisible = !detailsVisible;
         }
 
-        public void Draw(SessionHudState state)
+        public void ShowNotice(string message)
+        {
+            notice = message;
+        }
+
+        public void Draw(SessionHudState state, bool nativeMenuActive, bool onlineOperationActive)
         {
             if (state == null) return;
+            if (nativeMenuActive) return;
+            bool hasNotice = !string.IsNullOrEmpty(notice);
+            if (state.Status == SessionHudStatus.Offline && !hasNotice && !onlineOperationActive) return;
 
             int scale = Mathf.Clamp(Mathf.FloorToInt(Screen.height / 540f), 1, 2);
             EnsureStyles(scale);
 
             float logicalScreenHeight = Screen.height / (float)scale;
             float logicalScreenWidth = Screen.width / (float)scale;
-            float width = minimized ? MinimizedWidth : ExpandedWidth;
-            float height = minimized ? MinimizedHeight : tutorialVisible ? ExpandedHeight : CompactHeight;
+            float width = detailsVisible && !minimized ? ExpandedWidth : ContextWidth;
+            float height = detailsVisible && !minimized ? ExpandedHeight : ContextHeight;
             float x = Mathf.Max(10f, Mathf.Min(14f, logicalScreenWidth - width - 10f));
             float y = Mathf.Max(10f, logicalScreenHeight - height - 14f);
 
@@ -63,14 +71,8 @@ namespace CrawlOnline
             try
             {
                 DrawFrame(new Rect(x, y, width, height));
-                if (minimized)
-                {
-                    DrawMinimized(state, x, y, width);
-                }
-                else
-                {
-                    DrawExpanded(state, x, y, width);
-                }
+                if (detailsVisible && !minimized) DrawExpanded(state, x, y, width);
+                else DrawContext(state, x, y, width, hasNotice ? notice : null);
             }
             finally
             {
@@ -79,11 +81,16 @@ namespace CrawlOnline
             }
         }
 
-        private void DrawMinimized(SessionHudState state, float x, float y, float width)
+        private void DrawContext(SessionHudState state, float x, float y, float width, string message)
         {
             DrawSolid(new Rect(x + 5f, y + 5f, 4f, 28f), StatusColor(state.Status));
-            GUI.Label(new Rect(x + 17f, y + 8f, 142f, 22f), "CRAWL ONLINE", titleStyle);
-            GUI.Label(new Rect(x + 164f, y + 8f, width - 176f, 22f), StatusLabel(state.Status), statusStyle);
+            GUI.Label(new Rect(x + 17f, y + 8f, 92f, 22f), StatusLabel(state.Status), titleStyle);
+            string context = message;
+            if (string.IsNullOrEmpty(context))
+                context = state.Status == SessionHudStatus.Error || state.Status == SessionHudStatus.Offline
+                    ? state.Message :
+                    state.RoleLabel + "  " + RosterLabel(state);
+            GUI.Label(new Rect(x + 113f, y + 8f, width - 125f, 22f), context, smallStyle);
         }
 
         private void DrawExpanded(SessionHudState state, float x, float y, float width)
@@ -98,14 +105,11 @@ namespace CrawlOnline
             GUI.Label(new Rect(x + 154f, y + 50f, width - 166f, 20f), RosterLabel(state), roleStyle);
             GUI.Label(new Rect(x + 12f, y + 76f, width - 24f, 39f), state.Message, bodyStyle);
 
-            if (tutorialVisible)
-            {
-                DrawSolid(new Rect(x + 10f, y + 122f, width - 20f, 1f), Border);
-                GUI.Label(new Rect(x + 12f, y + 130f, width - 24f, 18f),
-                    "F8  HOST     F7  INVITE     F9  LEAVE", smallStyle);
-                GUI.Label(new Rect(x + 12f, y + 153f, width - 24f, 18f),
-                    "F5  HIDE HELP     F6  MINIMIZE", smallStyle);
-            }
+            DrawSolid(new Rect(x + 10f, y + 122f, width - 20f, 1f), Border);
+            GUI.Label(new Rect(x + 12f, y + 130f, width - 24f, 18f),
+                "F8  HOST     F7  INVITE     F9  LEAVE", smallStyle);
+            GUI.Label(new Rect(x + 12f, y + 153f, width - 24f, 18f),
+                "F5  DETAILS     F6  MINIMIZE", smallStyle);
         }
 
         private static void DrawFrame(Rect rect)

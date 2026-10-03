@@ -6,6 +6,19 @@ namespace CrawlOnline.Protocol.Tests;
 public sealed class OnlineFlowStateMachineTests
 {
     [Fact]
+    public void CampaignContextRefusesHostOrJoinWithoutMutatingTheFlow()
+    {
+        var flow = new OnlineFlowStateMachine();
+        long operation = flow.Operation;
+
+        Assert.False(OnlineSessionAccessPolicy.CanStartOrJoin(false));
+        Assert.Equal(OnlineFlowState.Offline, flow.State);
+        Assert.Equal(operation, flow.Operation);
+        Assert.Equal("Return to the main menu before hosting or joining online.",
+            OnlineSessionAccessPolicy.MainMenuRequiredMessage);
+    }
+
+    [Fact]
     public void HostFlowReachesConnectedState()
     {
         var flow = OpenMenu();

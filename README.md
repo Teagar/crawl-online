@@ -27,22 +27,25 @@ No proprietary game binaries or decompiled source are committed to this reposito
 5. Friends accept and run their own local copies.
 6. The mod synchronizes input and authoritative corrections over Steam relay.
 
-## Session HUD and controls
+## Online menu, HUD and diagnostic controls
 
-The unobtrusive lower-left **Crawl Online** HUD is available before online peer
-validation. It reports offline, lobby creation, waiting, authentication,
-connected, and recoverable connection-error states without displaying Steam or
-lobby IDs. Its four roster marks show connected slots (slot 0 is the host).
+Use the native **ONLINE** main-menu entry to host or join. Outside that menu,
+the passive lower-left status strip appears only for an active connection or a
+recoverable error. It reports role, connected slots (slot 0 is the host),
+connection state, and errors without displaying Steam or lobby IDs. `F5` can
+temporarily expand diagnostic details; they are not shown permanently.
 
 - `F8` — create a friends-only lobby as host
 - `F7` — open the Steam invite dialog while in a lobby
 - `F9` — leave the current lobby
-- `F5` — hide/show the control hint
-- `F6` — minimize/restore the HUD
+- `F5` — show/hide expanded diagnostic details
+- `F6` — minimize/restore those details
 
-The control hint can be hidden with `F5`. The HUD has no clickable controls,
-does not modify simulation, and does not consume mouse gameplay input. This UI
-is not evidence of completed release or cross-machine peer validation.
+`F8` and invite/join paths are refused during a campaign or scene transition
+with guidance to return to the main menu; no lobby operation is started. The
+HUD has no clickable controls, does not modify simulation, and does not consume
+mouse gameplay input. This UI is not evidence of completed release or
+cross-machine peer validation.
 
 ## Install a release
 

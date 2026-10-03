@@ -15,6 +15,7 @@
     <Compile Include="../../src/CrawlOnline/SessionHudState.cs" Link="SessionHudState.cs" />
     <Compile Include="../../src/CrawlOnline/NativeMenuContract.cs" Link="NativeMenuContract.cs" />
     <Compile Include="../../src/CrawlOnline/Online/OnlineFlowStateMachine.cs" Link="OnlineFlowStateMachine.cs" />
+    <Compile Include="../../src/CrawlOnline/Online/OnlineSessionAccessPolicy.cs" Link="OnlineSessionAccessPolicy.cs" />
     <Compile Include="../../src/CrawlOnline/Online/FriendLobbyList.cs" Link="FriendLobbyList.cs" />
   </ItemGroup>
 </Project>

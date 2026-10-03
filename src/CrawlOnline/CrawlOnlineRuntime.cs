@@ -57,8 +57,10 @@ namespace CrawlOnline
                 if (onlineFlow.State == OnlineFlowState.OnlineMenu ||
                     onlineFlow.State == OnlineFlowState.RecoverableError)
                     OnNativeHostSelected();
-                else
+                else if (CanStartOrJoinFromMenu())
                     session.Host();
+                else
+                    RefuseSessionStartOutsideMenu();
             }
             else if (Input.GetKeyDown(KeyCode.F7))
             {
@@ -120,7 +122,9 @@ namespace CrawlOnline
 
         public void DrawHud()
         {
-            if (hud != null && session != null) hud.Draw(session.GetHudState());
+            if (hud != null && session != null)
+                hud.Draw(session.GetHudState(), nativeMenu != null && nativeMenu.IsActiveMainMenu,
+                    onlineFlow != null && onlineFlow.State != OnlineFlowState.Offline);
         }
 
         private bool OnNativeOnlineSelected()
@@ -132,6 +136,11 @@ namespace CrawlOnline
 
         private void OnNativeHostSelected()
         {
+            if (!CanStartOrJoinFromMenu())
+            {
+                RefuseSessionStartOutsideMenu();
+                return;
+            }
             OnlineFlowTransition transition = onlineFlow.State == OnlineFlowState.RecoverableError
                 ? onlineFlow.Dispatch(OnlineFlowCommand.Retry)
                 : onlineFlow.Dispatch(OnlineFlowCommand.Host);
@@ -142,6 +151,11 @@ namespace CrawlOnline
 
         private void OnNativeJoinSelected()
         {
+            if (!CanStartOrJoinFromMenu())
+            {
+                RefuseSessionStartOutsideMenu();
+                return;
+            }
             OnlineFlowTransition transition = onlineFlow.Dispatch(OnlineFlowCommand.JoinFriend);
             if (!transition.Accepted) return;
             onlineOperation = transition.Operation;
@@ -234,9 +248,11 @@ namespace CrawlOnline
 
         private void OnLobbyJoinRequested(ulong lobbyId)
         {
-            if (lobbyId == 0 || !nativeMenu.CanAcceptExternalJoin)
+            if (lobbyId == 0 || nativeMenu == null || !nativeMenu.CanAcceptExternalJoin ||
+                !CanStartOrJoinFromMenu())
             {
                 log.LogWarning("Steam lobby invite ignored outside the active main menu.");
+                RefuseSessionStartOutsideMenu();
                 return;
             }
             if (onlineFlow.State != OnlineFlowState.Offline &&
@@ -257,6 +273,18 @@ namespace CrawlOnline
             nativeMenu.ShowFriendJoining();
             session.JoinDiscoveredLobby(lobbyId, onlineOperation);
             log.LogInfo("Accepted a Steam lobby invite from the active main menu.");
+        }
+
+        private bool CanStartOrJoinFromMenu()
+        {
+            return OnlineSessionAccessPolicy.CanStartOrJoin(
+                nativeMenu != null && nativeMenu.IsActiveMainMenu);
+        }
+
+        private void RefuseSessionStartOutsideMenu()
+        {
+            log.LogWarning(OnlineSessionAccessPolicy.MainMenuRequiredMessage);
+            if (hud != null) hud.ShowNotice(OnlineSessionAccessPolicy.MainMenuRequiredMessage);
         }
 
         private void UpdateOnlineFlow()

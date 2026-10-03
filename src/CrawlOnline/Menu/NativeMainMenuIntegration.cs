@@ -237,6 +237,25 @@ namespace CrawlOnline.Menu
             }
         }
 
+        public bool IsActiveMainMenu
+        {
+            get
+            {
+                var component = installedMenu as Component;
+                if (component == null || component.gameObject == null ||
+                    !component.gameObject.activeInHierarchy) return false;
+                try
+                {
+                    object active = ReadRequiredField(installedMenu.GetType(), installedMenu, "m_active");
+                    return active is bool && (bool)active;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+        }
+
         public bool OpenForExternalJoin()
         {
             if (!submenuOpen) OpenSubmenu();
