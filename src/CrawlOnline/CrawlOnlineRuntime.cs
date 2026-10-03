@@ -3,6 +3,7 @@ using CrawlOnline.Determinism;
 using CrawlOnline.Authoritative;
 using CrawlOnline.Diagnostics;
 using CrawlOnline.Menu;
+using CrawlOnline.Online;
 using UnityEngine;
 
 namespace CrawlOnline
@@ -17,6 +18,7 @@ namespace CrawlOnline
         private SessionHud hud;
         private MenuContractProbe menuProbe;
         private NativeMainMenuIntegration nativeMenu;
+        private OnlineFlowStateMachine onlineFlow;
 
         public CrawlOnlineRuntime(ManualLogSource logSource)
         {
@@ -26,7 +28,9 @@ namespace CrawlOnline
             harness = DeterminismHarness.TryCreate(log);
             hud = new SessionHud();
             menuProbe = MenuContractProbe.TryCreate(log);
-            nativeMenu = new NativeMainMenuIntegration(log, OnNativeOnlineSelected);
+            onlineFlow = new OnlineFlowStateMachine();
+            nativeMenu = new NativeMainMenuIntegration(log, OnNativeOnlineSelected,
+                OnNativeHostSelected, OnNativeJoinSelected, OnNativeOnlineBack);
             log.LogInfo("Ready: F8 host, F7 invite, F9 leave, F5 help, F6 HUD");
         }
 
@@ -82,6 +86,7 @@ namespace CrawlOnline
                 nativeMenu.Dispose();
                 nativeMenu = null;
             }
+            onlineFlow = null;
         }
 
         public void FixedTick()
@@ -100,9 +105,27 @@ namespace CrawlOnline
             if (hud != null && session != null) hud.Draw(session.GetHudState());
         }
 
-        private void OnNativeOnlineSelected()
+        private bool OnNativeOnlineSelected()
         {
-            log.LogInfo("Native ONLINE menu action selected; session submenu is the next integration stage.");
+            OnlineFlowTransition transition = onlineFlow.Dispatch(OnlineFlowCommand.OpenOnline);
+            if (transition.Accepted) log.LogInfo("Native ONLINE menu action selected.");
+            return transition.Accepted;
+        }
+
+        private void OnNativeHostSelected()
+        {
+            log.LogInfo("HOST GAME selected; Steam hosting integration is not active yet.");
+        }
+
+        private void OnNativeJoinSelected()
+        {
+            log.LogInfo("JOIN FRIEND selected; Steam join integration is not active yet.");
+        }
+
+        private void OnNativeOnlineBack()
+        {
+            OnlineFlowTransition transition = onlineFlow.Dispatch(OnlineFlowCommand.Back);
+            if (transition.Accepted) log.LogInfo("Returned from native Online submenu.");
         }
     }
 }

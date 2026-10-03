@@ -11,17 +11,25 @@ namespace CrawlOnline.Menu
     {
         private const int ScanIntervalFrames = 15;
         private readonly ManualLogSource log;
-        private readonly Action selected;
+        private readonly Func<bool> selected;
+        private readonly Action hostSelected;
+        private readonly Action joinSelected;
+        private readonly Action backSelected;
         private readonly Type menuMainType;
         private int framesUntilScan;
         private object installedMenu;
         private MainMenuOnlineBridge bridge;
         private bool contractWarningLogged;
+        private bool submenuOpen;
 
-        public NativeMainMenuIntegration(ManualLogSource logSource, Action selectedCallback)
+        public NativeMainMenuIntegration(ManualLogSource logSource, Func<bool> selectedCallback,
+            Action hostCallback, Action joinCallback, Action backCallback)
         {
             log = logSource;
             selected = selectedCallback;
+            hostSelected = hostCallback;
+            joinSelected = joinCallback;
+            backSelected = backCallback;
             menuMainType = AccessTools.TypeByName("MenuMain");
         }
 
@@ -30,6 +38,16 @@ namespace CrawlOnline.Menu
             framesUntilScan--;
             if (framesUntilScan > 0) return;
             framesUntilScan = ScanIntervalFrames;
+
+            if (submenuOpen)
+            {
+                var component = installedMenu as Component;
+                if (component != null && component.gameObject != null && component.gameObject.activeInHierarchy)
+                    return;
+                submenuOpen = false;
+                installedMenu = null;
+                if (backSelected != null) backSelected();
+            }
 
             if (menuMainType == null)
             {
@@ -49,10 +67,12 @@ namespace CrawlOnline.Menu
 
         public void Dispose()
         {
-            TryRemoveInstalledItem();
+            if (submenuOpen) TryRestoreOriginalMenu();
+            else TryRemoveInstalledItem();
             if (bridge != null) UnityEngine.Object.Destroy(bridge);
             bridge = null;
             installedMenu = null;
+            submenuOpen = false;
         }
 
         private void TryInstall()
@@ -155,7 +175,151 @@ namespace CrawlOnline.Menu
         {
             MainMenuOnlineBridge existing = owner.GetComponent<MainMenuOnlineBridge>();
             bridge = existing == null ? owner.AddComponent<MainMenuOnlineBridge>() : existing;
-            bridge.Initialise(selected);
+            bridge.Initialise(OpenSubmenu, OnHostSelected, OnJoinSelected, CloseSubmenu);
+        }
+
+        private void OpenSubmenu()
+        {
+            if (submenuOpen || installedMenu == null) return;
+            try
+            {
+                ReplaceWithSubmenu(installedMenu);
+                if (selected != null && !selected())
+                {
+                    TryRestoreMainMenuWithOnlineFocus();
+                    return;
+                }
+                submenuOpen = true;
+                log.LogInfo("Native Online submenu opened.");
+            }
+            catch (Exception exception)
+            {
+                WarnContractOnce("Native Online submenu failed safely: " + DescribeException(exception) + ".");
+                TryRestoreMainMenuWithOnlineFocus();
+            }
+        }
+
+        private void OnHostSelected()
+        {
+            if (!submenuOpen) return;
+            if (hostSelected != null) hostSelected();
+        }
+
+        private void OnJoinSelected()
+        {
+            if (!submenuOpen) return;
+            if (joinSelected != null) joinSelected();
+        }
+
+        private void CloseSubmenu()
+        {
+            if (!submenuOpen) return;
+            TryRestoreMainMenuWithOnlineFocus();
+            if (!submenuOpen && backSelected != null) backSelected();
+        }
+
+        private void ReplaceWithSubmenu(object menu)
+        {
+            IList data = ReadRequiredField(menu.GetType(), menu, "m_itemsData") as IList;
+            GameObject owner = ReadRequiredField(menu.GetType(), menu, "m_owner") as GameObject;
+            if (data == null || data.Count < 2 || owner == null)
+                throw new InvalidOperationException("Main-menu template is unavailable");
+
+            RemoveAllRenderedItems(menu);
+            InsertRenderedItem(menu, 0, data[0], "HOST GAME", "MsgCrawlOnlineHost", owner);
+            InsertRenderedItem(menu, 1, data[1], "JOIN FRIEND", "MsgCrawlOnlineJoin", owner);
+            InsertRenderedItem(menu, 2, data[1], "BACK", "MsgCrawlOnlineBack", owner);
+            SetSelectedItem(menu, 0);
+
+            IList items = ReadRequiredField(menu.GetType(), menu, "m_items") as IList;
+            string[] expected = { "MsgCrawlOnlineHost", "MsgCrawlOnlineJoin", "MsgCrawlOnlineBack" };
+            if (items == null || !MessagesEqual(ReadMessages(items), expected))
+                throw new InvalidOperationException("Online submenu invariant failed");
+        }
+
+        private void RestoreMainMenu(object menu, bool includeOnline)
+        {
+            IList data = ReadRequiredField(menu.GetType(), menu, "m_itemsData") as IList;
+            GameObject owner = ReadRequiredField(menu.GetType(), menu, "m_owner") as GameObject;
+            if (data == null || data.Count == 0 || owner == null)
+                throw new InvalidOperationException("Main-menu template is unavailable");
+
+            RemoveAllRenderedItems(menu);
+            for (int i = 0; i < data.Count; i++) InsertRenderedItem(menu, i, data[i], null, null, owner);
+            if (includeOnline)
+                InsertRenderedItem(menu, 1, data[1], "ONLINE", NativeMenuContract.OnlineMessage, owner);
+            SetSelectedItem(menu, includeOnline ? 1 : 0);
+        }
+
+        private void TryRestoreMainMenuWithOnlineFocus()
+        {
+            try
+            {
+                RestoreMainMenu(installedMenu, true);
+                submenuOpen = false;
+                log.LogInfo("Native Online submenu closed; focus restored to ONLINE.");
+            }
+            catch (Exception exception)
+            {
+                log.LogWarning("Could not restore native main menu: " + DescribeException(exception) + ".");
+            }
+        }
+
+        private void TryRestoreOriginalMenu()
+        {
+            try
+            {
+                RestoreMainMenu(installedMenu, false);
+            }
+            catch (Exception exception)
+            {
+                log.LogWarning("Could not restore original main menu during shutdown: " +
+                    DescribeException(exception) + ".");
+            }
+        }
+
+        private static void RemoveAllRenderedItems(object menu)
+        {
+            IList items = ReadRequiredField(menu.GetType(), menu, "m_items") as IList;
+            if (items == null) throw new InvalidOperationException("Rendered menu items are unavailable");
+            for (int index = items.Count - 1; index >= 0; index--) TryRemoveItem(menu, index);
+        }
+
+        private static void InsertRenderedItem(object menu, int index, object template, string text,
+            string message, GameObject owner)
+        {
+            object itemData = CloneItemData(template);
+            if (text != null) WriteRequiredField(itemData.GetType(), itemData, "m_text", text);
+            if (message != null) WriteRequiredField(itemData.GetType(), itemData, "m_message", message);
+            WriteRequiredField(itemData.GetType(), itemData, "m_enabled", true);
+            WriteRequiredField(itemData.GetType(), itemData, "m_visible", true);
+
+            MethodInfo insert = AccessTools.Method(menu.GetType(), "InsertItem",
+                new[] { typeof(int), itemData.GetType() });
+            if (insert == null) throw new MissingMethodException(menu.GetType().FullName, "InsertItem");
+            InvokeReflected(insert, menu, new[] { (object)index, itemData }, "InsertItem");
+
+            IList items = ReadRequiredField(menu.GetType(), menu, "m_items") as IList;
+            if (items == null || index >= items.Count) throw new InvalidOperationException("Inserted item is absent");
+            object inserted = items[index];
+            WriteRequiredField(inserted.GetType(), inserted, "m_messageObject", owner);
+        }
+
+        private static void SetSelectedItem(object menu, int index)
+        {
+            MethodInfo method = menu.GetType().GetMethod("SetSelectedItem",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                null, new[] { typeof(int) }, null);
+            if (method == null) throw new MissingMethodException(menu.GetType().FullName, "SetSelectedItem(Int32)");
+            InvokeReflected(method, menu, new object[] { index }, "SetSelectedItem");
+        }
+
+        private static bool MessagesEqual(string[] actual, string[] expected)
+        {
+            if (actual == null || expected == null || actual.Length != expected.Length) return false;
+            for (int i = 0; i < actual.Length; i++)
+                if (!string.Equals(actual[i], expected[i], StringComparison.Ordinal)) return false;
+            return true;
         }
 
         private static object CloneItemData(object source)

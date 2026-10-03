@@ -79,3 +79,22 @@ and `THE VAULT`, native focus/action animation, `W`/`S` navigation, and dispatch
 to `MsgCrawlOnline` without entering the local-game flow. Repeated scans did not
 create duplicates. Full controller/mouse parity, scene re-entry, resolutions,
 and the Online submenu remain the responsibility of subsequent cards.
+
+## Native Online submenu
+
+Selecting `ONLINE` now transactionally replaces only the rendered menu items
+with `HOST GAME`, `JOIN FRIEND`, and `BACK`. All three rows are cloned from the
+legitimate runtime templates and continue to use native focus, action animation,
+sound, spacing, and message dispatch. No assets are shipped by the mod.
+
+`BACK` reconstructs the original five rows from the untouched serialized item
+data, reinserts exactly one `ONLINE` row, and restores focus to it. If submenu
+construction or the state-machine transition fails, the integration immediately
+reconstructs the main menu rather than leaving a partial list. Shutdown while
+the submenu is open reconstructs only the original five rows. If the owning menu
+is destroyed during scene replacement, the submenu state is also closed so a
+future main-menu instance can open Online normally.
+
+The host and join bridge actions are intentionally placeholders in this stage:
+they log the selection but do not create or join a Steam lobby. Session effects
+are connected by their dedicated cards.
