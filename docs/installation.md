@@ -25,7 +25,7 @@ If Crawl is in a non-standard Steam library, add
 `-GameDir 'D:\SteamLibrary\steamapps\common\Crawl'`. Start Crawl normally through
 Steam afterwards.
 
-## Linux
+## Linux (native or Proton)
 
 From the extracted release folder:
 
@@ -34,10 +34,21 @@ chmod +x install-release-linux.sh
 ./install-release-linux.sh install --package .
 ```
 
-For a non-standard library add `--game-dir /path/to/Crawl`. Set Steam's Crawl launch
-option once to the line printed by the installer (normally
-`./run_bepinex.sh ./Crawl.x86_64 # %command%`). This starts the local game through
-BepInEx; it does not replace game files.
+For a non-standard library add `--game-dir /path/to/Crawl`. The installer detects
+either native `Crawl.x86_64` or Windows x86 `Crawl.exe` running through Proton,
+validates the platform-specific assembly hash, and selects the matching pinned
+BepInEx package:
+
+- Native Linux uses `linux-x64` and prints the one-time Steam launch option
+  `./run_bepinex.sh ./Crawl.x86_64 # %command%`.
+- Proton uses the Windows `win-x86` Doorstop/BepInEx package. Start Crawl normally
+  through Steam; no Linux wrapper launch option is required.
+
+If both executables exist in one directory, auto-detection fails without changing
+files. Review the directory and explicitly pass `--platform linux` or
+`--platform proton`. An existing BepInEx installation must contain the matching
+entrypoint (`run_bepinex.sh` or `winhttp.dll`); the installer will not overlay an
+incompatible loader or disturb other plugins.
 
 ## Updating, removing, and diagnosis
 
@@ -54,6 +65,10 @@ alone.
 ./install-release-linux.sh diagnose
 ./install-release-linux.sh uninstall
 ```
+
+Linux diagnosis records and verifies whether the installation targets native
+Linux or Proton. Use the same `--game-dir` and, for an intentionally mixed
+directory, the same explicit `--platform` used during installation.
 
 Uninstall deletes only `BepInEx/plugins/CrawlOnline/CrawlOnline*.dll` and its small
 Crawl Online state file. It deliberately preserves BepInEx and all other plugins;

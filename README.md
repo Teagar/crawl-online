@@ -46,7 +46,7 @@ is not evidence of completed release or cross-machine peer validation.
 
 ## Install a release
 
-See the short [installation guide](docs/installation.md) for verified install, update, uninstall, and diagnostics on Windows x86 and Linux. Release packages contain only Crawl Online; the installer fetches the pinned BepInEx 5.4.11 loader directly from upstream and never includes Crawl or Steam files.
+See the short [installation guide](docs/installation.md) for verified install, update, uninstall, and diagnostics on Windows x86, native Linux, and Crawl Windows x86 through Proton. Release packages contain only Crawl Online; the installer fetches the pinned BepInEx 5.4.11 loader directly from upstream and never includes Crawl or Steam files.
 
 ## Build
 

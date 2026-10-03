@@ -27,14 +27,31 @@ assert 'BepInEx_x86_5.4.11.0.zip' in packager
 assert 'multiplayer gameplay end-to-end validated' in docs
 assert '.crawl-online-backup.' in linux and 'activation_started=true' in linux
 assert '.crawl-online-backup-' in windows and '$activationStarted = $true' in windows
+for text in ('Crawl.exe', '--platform', 'win-x86', 'winhttp.dll', 'e93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e'):
+    assert text in linux
 print('release installer static contract checks passed')
+
+
+def windows_executable(machine: int = 0x14C) -> bytes:
+    data = bytearray(512)
+    data[:2] = b'MZ'
+    data[60:64] = (128).to_bytes(4, 'little')
+    data[128:132] = b'PE\0\0'
+    data[132:134] = machine.to_bytes(2, 'little')
+    return bytes(data)
 
 with tempfile.TemporaryDirectory() as temp:
     temp = Path(temp)
     bootstrap, runtime = temp / 'CrawlOnline.dll', temp / 'CrawlOnline.Runtime.dll'
     linux_loader, windows_loader = temp / 'linux.zip', temp / 'windows.zip'
     bootstrap.write_bytes(b'bootstrap'); runtime.write_bytes(b'runtime')
-    linux_loader.write_bytes(b'linux loader'); windows_loader.write_bytes(b'windows loader')
+    with zipfile.ZipFile(linux_loader, 'w') as archive:
+        archive.writestr('BepInEx/core/BepInEx.dll', b'BepInEx 5.4.11 Linux fixture')
+        archive.writestr('run_bepinex.sh', '#!/bin/sh\n')
+    with zipfile.ZipFile(windows_loader, 'w') as archive:
+        archive.writestr('BepInEx/core/BepInEx.dll', b'BepInEx 5.4.11 Windows x86 fixture')
+        archive.writestr('winhttp.dll', b'x86 doorstop fixture')
+        archive.writestr('doorstop_config.ini', '[UnityDoorstop]\n')
     output = temp / 'out'
     environment = os.environ | {'CRAWL_ONLINE_BOOTSTRAP': str(bootstrap), 'CRAWL_ONLINE_RUNTIME': str(runtime)}
     subprocess.run([str(root / 'scripts/package-release.sh'), 'test-1', str(linux_loader), str(windows_loader), str(output)], check=True, env=environment, stdout=subprocess.PIPE, text=True)
@@ -46,7 +63,7 @@ with tempfile.TemporaryDirectory() as temp:
     assert 'CrawlOnline-test-1/INSTALL.md' in names
     assert not any(name.endswith(('Assembly-CSharp.dll', 'steam_api.dll', 'Crawl.exe')) for name in names)
     assert manifest['plugins']['CrawlOnline.dll'] == hashlib.sha256(b'bootstrap').hexdigest()
-    assert manifest['bepInEx']['linux-x64']['sha256'] == hashlib.sha256(b'linux loader').hexdigest()
+    assert manifest['bepInEx']['linux-x64']['sha256'] == hashlib.sha256(linux_loader.read_bytes()).hexdigest()
 
     game = temp / 'game'
     (game / 'Crawl_Data/Managed').mkdir(parents=True)
@@ -56,12 +73,16 @@ with tempfile.TemporaryDirectory() as temp:
     (game / 'Crawl.x86_64').chmod(0o755)
     (game / 'Crawl_Data/Managed/Assembly-CSharp.dll').write_bytes(b'legitimate test fixture')
     (game / 'BepInEx/core/BepInEx.dll').write_bytes(b'BepInEx 5.4.11 test fixture')
+    (game / 'run_bepinex.sh').write_text('#!/bin/sh\n')
+    (game / 'run_bepinex.sh').chmod(0o755)
     (game / 'BepInEx/plugins/OtherMod/keep.txt').write_text('keep')
     release_dir = output / 'CrawlOnline-test-1'
     installer = root / 'scripts/install-release-linux.sh'
     common = ['--game-dir', str(game), '--allow-unknown-game']
     install = subprocess.run([str(installer), 'install', '--package', str(release_dir), *common], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert install.returncode == 0, install.stdout + install.stderr
+    native_state = json.loads((game / 'BepInEx/plugins/CrawlOnline/.crawl-online-install.json').read_text())
+    assert native_state['platform'] == 'linux' and native_state['loader'] == 'linux-x64'
     diagnostic = subprocess.run([str(installer), 'diagnose', *common], check=True, stdout=subprocess.PIPE, text=True)
     assert diagnostic.stdout.count('verified') == 2
     installed = game / 'BepInEx/plugins/CrawlOnline/CrawlOnline.Runtime.dll'
@@ -78,4 +99,62 @@ with tempfile.TemporaryDirectory() as temp:
     subprocess.run([str(installer), 'uninstall', *common], check=True, stdout=subprocess.PIPE, text=True)
     assert not (game / 'BepInEx/plugins/CrawlOnline').exists()
     assert (game / 'BepInEx/plugins/OtherMod/keep.txt').read_text() == 'keep'
+
+    (game / 'Crawl.exe').write_bytes(windows_executable())
+    ambiguous = subprocess.run([str(installer), 'diagnose', *common], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert ambiguous.returncode != 0 and 'Both Linux and Windows' in ambiguous.stderr
+    forced_linux = subprocess.run([str(installer), 'diagnose', '--platform', 'linux', *common], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert forced_linux.returncode == 0
+
+    proton = temp / 'proton-game'
+    (proton / 'Crawl_Data/Managed').mkdir(parents=True)
+    (proton / 'BepInEx/plugins/OtherMod').mkdir(parents=True)
+    (proton / 'Crawl.exe').write_bytes(windows_executable())
+    (proton / 'Crawl_Data/Managed/Assembly-CSharp.dll').write_bytes(b'legitimate Windows test fixture')
+    (proton / 'BepInEx/plugins/OtherMod/keep.txt').write_text('keep')
+    proton_common = ['--game-dir', str(proton), '--allow-unknown-game']
+    fake_bin = temp / 'bin'
+    fake_bin.mkdir()
+    fake_curl = fake_bin / 'curl'
+    fake_curl.write_text("""#!/bin/sh
+out=''
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = '-o' ]; then out="$2"; shift 2; else shift; fi
+done
+cp "$CRAWL_ONLINE_TEST_DOWNLOAD" "$out"
+""")
+    fake_curl.chmod(0o755)
+    proton_environment = os.environ | {
+        'PATH': str(fake_bin) + os.pathsep + os.environ['PATH'],
+        'CRAWL_ONLINE_TEST_DOWNLOAD': str(windows_loader),
+    }
+    proton_install = subprocess.run([str(installer), 'install', '--package', str(release_dir), *proton_common], env=proton_environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert proton_install.returncode == 0, proton_install.stdout + proton_install.stderr
+    proton_state = json.loads((proton / 'BepInEx/plugins/CrawlOnline/.crawl-online-install.json').read_text())
+    assert proton_state['platform'] == 'proton' and proton_state['loader'] == 'win-x86'
+    proton_diagnostic = subprocess.run([str(installer), 'diagnose', *proton_common], check=True, stdout=subprocess.PIPE, text=True)
+    assert proton_diagnostic.stdout.count('verified') == 2 and 'win-x86 entrypoint: present' in proton_diagnostic.stdout
+    assert (proton / 'winhttp.dll').is_file() and not (proton / 'run_bepinex.sh').exists()
+    subprocess.run([str(installer), 'update', '--package', str(release_dir), *proton_common], check=True, stdout=subprocess.PIPE, text=True)
+    subprocess.run([str(installer), 'uninstall', *proton_common], check=True, stdout=subprocess.PIPE, text=True)
+    assert not (proton / 'BepInEx/plugins/CrawlOnline').exists()
+    assert (proton / 'BepInEx/plugins/OtherMod/keep.txt').read_text() == 'keep'
+
+    invalid = temp / 'invalid-proton'
+    (invalid / 'Crawl_Data/Managed').mkdir(parents=True)
+    (invalid / 'Crawl.exe').write_bytes(windows_executable(0x8664))
+    (invalid / 'Crawl_Data/Managed/Assembly-CSharp.dll').write_bytes(b'fixture')
+    invalid_result = subprocess.run([str(installer), 'diagnose', '--game-dir', str(invalid), '--allow-unknown-game'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert invalid_result.returncode != 0 and 'Windows x86' in invalid_result.stderr
+
+    wrong_loader = temp / 'wrong-loader'
+    (wrong_loader / 'Crawl_Data/Managed').mkdir(parents=True)
+    (wrong_loader / 'BepInEx/core').mkdir(parents=True)
+    (wrong_loader / 'Crawl.exe').write_bytes(windows_executable())
+    (wrong_loader / 'Crawl_Data/Managed/Assembly-CSharp.dll').write_bytes(b'fixture')
+    (wrong_loader / 'BepInEx/core/BepInEx.dll').write_bytes(b'BepInEx 5.4.11 fixture')
+    (wrong_loader / 'run_bepinex.sh').write_text('#!/bin/sh\n')
+    wrong = subprocess.run([str(installer), 'install', '--package', str(release_dir), '--game-dir', str(wrong_loader), '--allow-unknown-game'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert wrong.returncode != 0 and 'lacks the win-x86 entrypoint' in wrong.stderr
+    assert not (wrong_loader / 'BepInEx/plugins/CrawlOnline').exists()
 print('release package smoke test passed')
