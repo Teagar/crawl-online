@@ -5,7 +5,7 @@ using HarmonyLib;
 
 namespace CrawlOnline.Menu
 {
-    // Patches only the reflected controller overload confirmed by runtime observation.
+    // Patches the native input-state query confirmed by physical-controller observation.
     // The postfix never changes the game's result or menu while it is dispatching input.
     internal sealed class NativeMenuAltBackHook : IDisposable
     {
@@ -24,29 +24,29 @@ namespace CrawlOnline.Menu
             nativeMenu = nativeMenuIntegration;
             if (nativeMenu == null) throw new ArgumentNullException("nativeMenuIntegration");
 
-            Type menuType = AccessTools.TypeByName("MenuTextMenu");
+            Type systemInputType = AccessTools.TypeByName("SystemInput");
             Type inputType = AccessTools.TypeByName("eInput");
             Type controllerType = AccessTools.TypeByName("eController");
-            if (menuType == null || inputType == null || controllerType == null || !inputType.IsEnum)
-                throw new InvalidOperationException("MenuTextMenu input contract is unavailable");
+            if (systemInputType == null || inputType == null || controllerType == null || !inputType.IsEnum)
+                throw new InvalidOperationException("SystemInput controller contract is unavailable");
 
             altInput = Enum.Parse(inputType, "Alt");
-            MethodInfo target = menuType.GetMethod("MenuInputDown",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
-                new[] { inputType, controllerType.MakeByRefType() }, null);
+            MethodInfo target = systemInputType.GetMethod("InputState",
+                BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic, null,
+                new[] { inputType, controllerType }, null);
             if (target == null || target.ReturnType != typeof(bool))
-                throw new MissingMethodException(menuType.FullName, "MenuInputDown(eInput,eController&)");
+                throw new MissingMethodException(systemInputType.FullName, "InputState(eInput,eController)");
             ParameterInfo[] parameters = target.GetParameters();
-            if (parameters.Length != 2 || !parameters[1].ParameterType.IsByRef)
-                throw new InvalidOperationException("MenuInputDown controller parameter is not ByRef");
+            if (parameters.Length != 2 || parameters[1].ParameterType.IsByRef)
+                throw new InvalidOperationException("InputState controller parameter is not by value");
 
             harmony = new Harmony(HarmonyId);
             try
             {
                 harmony.Patch(target, null,
-                    new HarmonyMethod(typeof(NativeMenuAltBackHook), "MenuInputDownPostfix"));
+                    new HarmonyMethod(typeof(NativeMenuAltBackHook), "InputStatePostfix"));
                 active = this;
-                log.LogInfo("Native controller BACK hook installed.");
+                log.LogInfo("Native controller BACK hook installed on SystemInput.InputState.");
             }
             catch
             {
@@ -70,16 +70,16 @@ namespace CrawlOnline.Menu
             }
         }
 
-        // Harmony binds these special names to the original return value, instance,
-        // and first parameter without requiring build-time Crawl type references.
-        private static void MenuInputDownPostfix(ref bool __result, object __instance, object __0)
+        // Harmony binds these special names to the original return value and first
+        // parameter without requiring build-time Crawl type references.
+        private static void InputStatePostfix(ref bool __result, object __0)
         {
             NativeMenuAltBackHook hook = active;
             if (hook == null || hook.disposed) return;
             try
             {
                 bool isAltInput = hook.altInput.Equals(__0);
-                bool isInstalledMenu = hook.nativeMenu.IsInstalledMenu(__instance);
+                bool isInstalledMenu = hook.nativeMenu.IsActiveMainMenu;
                 hook.pendingNativeBack.TryLatch(__result, isAltInput, isInstalledMenu,
                     hook.nativeMenu.IsSubmenuOpen);
             }

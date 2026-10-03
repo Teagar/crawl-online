@@ -96,9 +96,9 @@ is destroyed during scene replacement, the submenu state is also closed so a
 future main-menu instance can open Online normally.
 
 Physical controller Circle is observed through a dynamic Harmony postfix on the
-exact `MenuTextMenu.MenuInputDown(eInput, eController&)` runtime overload. The
-postfix only latches a successful `Alt` result for the installed Online submenu;
-it never changes the game's result or reconstructs the menu during input
+exact `SystemInput.InputState(eInput, eController)` runtime overload. The
+postfix only latches a successful `Alt` result while the installed Online submenu
+is open; it never changes the game's result or reconstructs the menu during input
 dispatch. The following runtime tick consumes that one-shot latch through the
 same `BACK` path, and ignores it safely outside the submenu.
 
