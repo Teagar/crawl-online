@@ -9,7 +9,7 @@ using Steamworks;
 
 namespace CrawlOnline
 {
-    internal sealed class SteamLobbySession : IDisposable
+    internal sealed class SteamLobbySession : IDisposable, ISessionPacketTransport, ISessionMembership
     {
         private const int Channel = 7;
         private const int MaxPacketSize = 64 * 1024;
@@ -32,16 +32,7 @@ namespace CrawlOnline
         private readonly Callback<LobbyChatUpdate_t> lobbyChatUpdated;
         private CSteamID lobbyId = CSteamID.Nil;
         private CSteamID ownerId = CSteamID.Nil;
-        private SessionRoster roster;
-        private ulong sessionNonce;
-        private uint localAttempt;
-        private byte localSlot = byte.MaxValue;
-        private SequenceWindow receiveWindow;
-        private readonly Dictionary<ulong, uint> peerAcknowledgements = new Dictionary<ulong, uint>();
-        private readonly Dictionary<ulong, SnapshotHistory> peerSnapshotHistory = new Dictionary<ulong, SnapshotHistory>();
-        private uint localInputSequence;
-        private uint localInputEventSequence;
-        private uint snapshotSequence;
+        private readonly SessionProtocolEngine protocol;
         private SessionHudStatus hudStatus = SessionHudStatus.Offline;
         private string hudMessage = "Offline — F8 creates a friends-only lobby.";
         private bool cancelPendingHost;
@@ -61,6 +52,10 @@ namespace CrawlOnline
             log = logSource;
             gameBuild = localGameBuild;
             gameBuildMetadata = localGameBuild.ToString();
+            protocol = new SessionProtocolEngine(this, this, localGameBuild);
+            protocol.InputReceived += OnInputReceived;
+            protocol.InputEventReceived += OnInputEventReceived;
+            protocol.SnapshotReceived += OnSnapshotReceived;
             lobbyCreated = CallResult<LobbyCreated_t>.Create(OnLobbyCreated);
             lobbyEntered = CallResult<LobbyEnter_t>.Create(OnLobbyEntered);
             lobbyMatches = CallResult<LobbyMatchList_t>.Create(OnLobbyMatchList);
@@ -78,35 +73,35 @@ namespace CrawlOnline
 
         public bool IsAuthoritativeHost
         {
-            get { return InLobby && SteamUser.GetSteamID() == ownerId; }
+            get { return InLobby && protocol.IsHost && SteamUser.GetSteamID() == ownerId; }
         }
 
         public byte LocalSlot
         {
-            get { return localSlot; }
+            get { return protocol.LocalSlot; }
         }
 
         public ulong SessionNonce
         {
-            get { return sessionNonce; }
+            get { return protocol.SessionNonce; }
         }
 
         public byte[] GetConnectedPeerSlots()
         {
-            return roster == null ? new byte[0] : roster.GetConnectedPeerSlots();
+            return protocol.GetConnectedPeerSlots();
         }
 
         public SessionHudState GetHudState()
         {
             bool[] slots = new bool[4];
             bool isHost = IsAuthoritativeHost;
-            int visibleLocalSlot = localSlot == byte.MaxValue ? -1 : localSlot;
+            int visibleLocalSlot = LocalSlot == byte.MaxValue ? -1 : LocalSlot;
             if (InLobby)
             {
                 slots[0] = true;
-                if (isHost && roster != null)
+                if (isHost)
                 {
-                    byte[] peers = roster.GetConnectedPeerSlots();
+                    byte[] peers = protocol.GetConnectedPeerSlots();
                     for (int i = 0; i < peers.Length; i++)
                     {
                         if (peers[i] < slots.Length) slots[peers[i]] = true;
@@ -226,8 +221,7 @@ namespace CrawlOnline
                 CSteamID member = SteamMatchmaking.GetLobbyMemberByIndex(lobbyId, i);
                 if (member != self)
                 {
-                    Send(member, PacketCodec.EncodeControl(PacketType.Disconnect), EP2PSend.k_EP2PSendReliable);
-                    SteamNetworking.CloseP2PSessionWithUser(member);
+                    protocol.SendDisconnect(member.m_SteamID);
                 }
             }
             SteamMatchmaking.LeaveLobby(lobbyId);
@@ -255,76 +249,23 @@ namespace CrawlOnline
 
                 byte[] packet = new byte[read];
                 Buffer.BlockCopy(receiveBuffer, 0, packet, 0, (int)read);
-                HandlePacket(remote, packet);
+                HandlePacket(remote.m_SteamID, packet);
             }
         }
 
         public bool SendLocalInput(InputFrame input)
         {
-            if (!InLobby || IsAuthoritativeHost || localSlot == byte.MaxValue || sessionNonce == 0)
-                return false;
-            input.PlayerId = localSlot;
-            byte downButtons = input.DownButtons;
-            byte upButtons = input.UpButtons;
-            input.DownButtons = 0;
-            input.UpButtons = 0;
-            localInputSequence++;
-            if (localInputSequence == 0) localInputSequence = 1;
-            var sessionInput = new SessionInputFrame
-            {
-                SessionNonce = sessionNonce,
-                Sequence = localInputSequence,
-                Input = input
-            };
-            bool queued = Send(ownerId, AuthoritativeCodec.EncodeInput(sessionInput),
-                EP2PSend.k_EP2PSendUnreliableNoDelay);
-            if (downButtons != 0 || upButtons != 0)
-            {
-                localInputEventSequence++;
-                if (localInputEventSequence == 0) localInputEventSequence = 1;
-                sessionInput.Sequence = localInputEventSequence;
-                sessionInput.Input.DownButtons = downButtons;
-                sessionInput.Input.UpButtons = upButtons;
-                queued &= Send(ownerId, AuthoritativeCodec.EncodeInputEvent(sessionInput),
-                    EP2PSend.k_EP2PSendReliable);
-            }
-            return queued;
+            return InLobby && !IsAuthoritativeHost && protocol.SendLocalInput(input);
         }
 
         public bool BroadcastSnapshot(WorldSnapshot snapshot)
         {
-            if (!IsAuthoritativeHost || roster == null || sessionNonce == 0 || snapshot == null)
-                return false;
-            snapshotSequence++;
-            if (snapshotSequence == 0) snapshotSequence = 1;
-            snapshot.SessionNonce = sessionNonce;
-            snapshot.Sequence = snapshotSequence;
-            byte[] packet = AuthoritativeCodec.EncodeSnapshot(snapshot);
-            ulong[] peers = roster.GetConnectedPeerIds();
-            bool queued = true;
-            for (int i = 0; i < peers.Length; i++)
-            {
-                SnapshotHistory history;
-                if (!peerSnapshotHistory.TryGetValue(peers[i], out history))
-                {
-                    history = new SnapshotHistory(32);
-                    peerSnapshotHistory.Add(peers[i], history);
-                }
-                history.Add(snapshot);
-                queued &= Send(new CSteamID(peers[i]), packet, EP2PSend.k_EP2PSendUnreliable);
-            }
-            return queued;
+            return IsAuthoritativeHost && protocol.BroadcastSnapshot(snapshot);
         }
 
         public bool AcknowledgeSnapshot(uint sequence)
         {
-            if (!InLobby || IsAuthoritativeHost || localSlot == byte.MaxValue || sessionNonce == 0 || sequence == 0)
-                return false;
-            return Send(ownerId, AuthoritativeCodec.EncodeAcknowledgement(new SnapshotAcknowledgement
-            {
-                SessionNonce = sessionNonce,
-                Sequence = sequence
-            }), EP2PSend.k_EP2PSendReliable);
+            return InLobby && !IsAuthoritativeHost && protocol.AcknowledgeSnapshot(sequence);
         }
 
         public void Dispose()
@@ -362,17 +303,14 @@ namespace CrawlOnline
 
             lobbyId = new CSteamID(result.m_ulSteamIDLobby);
             ownerId = SteamUser.GetSteamID();
-            sessionNonce = CreateNonce();
-            roster = new SessionRoster(ownerId.m_SteamID, sessionNonce, 4, gameBuild);
-            receiveWindow = new SequenceWindow(sessionNonce);
-            localSlot = 0;
+            protocol.StartHost(ownerId.m_SteamID, CreateNonce(), 4);
             SteamMatchmaking.SetLobbyData(lobbyId, LobbyPacketProtocolKey, PacketCodec.ProtocolVersion.ToString(CultureInfo.InvariantCulture));
             SteamMatchmaking.SetLobbyData(lobbyId, LobbySessionProtocolKey, SessionProtocolVersion);
             SteamMatchmaking.SetLobbyData(lobbyId, LobbyBuildKey, CrawlOnlineRuntime.Version);
             SteamMatchmaking.SetLobbyData(lobbyId, LobbyGameBuildKey, gameBuildMetadata);
-            SteamMatchmaking.SetLobbyData(lobbyId, LobbyNonceKey, sessionNonce.ToString("x16", CultureInfo.InvariantCulture));
+            SteamMatchmaking.SetLobbyData(lobbyId, LobbyNonceKey, SessionNonce.ToString("x16", CultureInfo.InvariantCulture));
             log.LogInfo("Hosting authoritative lobby " + lobbyId + " as slot 0 with session nonce " +
-                        sessionNonce.ToString("x16", CultureInfo.InvariantCulture) +
+                        SessionNonce.ToString("x16", CultureInfo.InvariantCulture) +
                         ". Press F7 to invite friends.");
             SetHudStatus(SessionHudStatus.WaitingForPeers, "Lobby ready — F7 invites friends.");
         }
@@ -433,16 +371,17 @@ namespace CrawlOnline
 
             lobbyId = new CSteamID(result.m_ulSteamIDLobby);
             ownerId = SteamMatchmaking.GetLobbyOwner(lobbyId);
-            string protocol = SteamMatchmaking.GetLobbyData(lobbyId, LobbyPacketProtocolKey);
+            string packetProtocol = SteamMatchmaking.GetLobbyData(lobbyId, LobbyPacketProtocolKey);
             string sessionProtocol = SteamMatchmaking.GetLobbyData(lobbyId, LobbySessionProtocolKey);
             string build = SteamMatchmaking.GetLobbyData(lobbyId, LobbyBuildKey);
             string remoteGameBuild = SteamMatchmaking.GetLobbyData(lobbyId, LobbyGameBuildKey);
             string nonce = SteamMatchmaking.GetLobbyData(lobbyId, LobbyNonceKey);
-            if (protocol != PacketCodec.ProtocolVersion.ToString(CultureInfo.InvariantCulture) ||
+            ulong joinedNonce;
+            if (packetProtocol != PacketCodec.ProtocolVersion.ToString(CultureInfo.InvariantCulture) ||
                 sessionProtocol != SessionProtocolVersion ||
                 build != CrawlOnlineRuntime.Version ||
-                !ulong.TryParse(nonce, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out sessionNonce) ||
-                sessionNonce == 0)
+                !ulong.TryParse(nonce, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out joinedNonce) ||
+                joinedNonce == 0)
             {
                 log.LogError("Incompatible or incomplete lobby protocol metadata.");
                 SetHudStatus(SessionHudStatus.Error, "Lobby version is incompatible.");
@@ -458,9 +397,16 @@ namespace CrawlOnline
             }
 
             log.LogInfo("Joined lobby " + lobbyId + ", owner=" + ownerId);
-            receiveWindow = new SequenceWindow(sessionNonce);
             SetHudStatus(SessionHudStatus.Authenticating, "Authenticating with host…");
-            SendHello();
+            if (!protocol.StartClient(SteamUser.GetSteamID().m_SteamID, ownerId.m_SteamID,
+                joinedNonce, byte.MaxValue))
+            {
+                log.LogError("Failed to queue authenticated hello for host " + ownerId);
+                SetHudStatus(SessionHudStatus.Error, "Could not contact host. Rejoin the lobby.");
+                Leave();
+                return;
+            }
+            log.LogInfo("Sent authenticated hello attempt " + protocol.LocalAttempt + " to host " + ownerId);
         }
 
         private void OnSessionRequested(P2PSessionRequest_t request)
@@ -475,149 +421,53 @@ namespace CrawlOnline
             log.LogInfo("Accepted P2P transport from lobby member " + request.m_steamIDRemote + "; awaiting authenticated hello.");
         }
 
-        private void HandlePacket(CSteamID remote, byte[] packet)
+        private void HandlePacket(ulong remoteId, byte[] packet)
         {
-            PacketType type;
-            if (!IsLobbyMember(remote) || !PacketCodec.TryReadType(packet, out type))
+            SessionPacketResult result = protocol.HandlePacket(remoteId, packet);
+            CSteamID remote = new CSteamID(remoteId);
+            if (result == SessionPacketResult.Rejected)
             {
                 log.LogWarning("Rejected invalid packet from " + remote);
                 return;
             }
-
-            CSteamID self = SteamUser.GetSteamID();
-            if (type == PacketType.Hello && self == ownerId)
+            if (result == SessionPacketResult.HandshakeAccepted)
             {
-                SessionHello hello;
-                if (!PacketCodec.TryDecodeHello(packet, out hello) || roster == null)
-                {
-                    log.LogWarning("Rejected malformed peer hello from " + remote);
-                    return;
-                }
-                SessionAccepted accepted;
-                SessionRejected rejected;
-                if (roster.TryAccept(remote.m_SteamID, hello, out accepted, out rejected))
-                {
-                    log.LogInfo("Authenticated peer " + remote + " as slot " + accepted.AssignedSlot +
-                                " attempt " + accepted.Attempt);
-                    Send(remote, PacketCodec.EncodeAccepted(accepted), EP2PSend.k_EP2PSendReliable);
-                    SetHudStatus(SessionHudStatus.Connected, "Peer connected.");
-                }
-                else
-                {
-                    log.LogWarning("Rejected peer " + remote + ": " + rejected.Reason);
-                    Send(remote, PacketCodec.EncodeRejected(rejected), EP2PSend.k_EP2PSendReliable);
-                }
+                byte slot;
+                protocol.TryGetPeerSlot(remoteId, out slot);
+                log.LogInfo("Authenticated peer " + remote + " as slot " + slot + ".");
+                SetHudStatus(SessionHudStatus.Connected, "Peer connected.");
             }
-            else if (type == PacketType.HelloAccepted && remote == ownerId && self != ownerId)
+            else if (result == SessionPacketResult.HandshakeRejected)
             {
-                SessionAccepted accepted;
-                if (!PacketCodec.TryDecodeAccepted(packet, out accepted) ||
-                    !SessionRoster.ValidateAcceptance(accepted, ownerId.m_SteamID, sessionNonce, localAttempt,
-                        gameBuild))
-                {
-                    log.LogError("Rejected invalid host acceptance from " + remote);
-                    Leave();
-                    return;
-                }
-                localSlot = accepted.AssignedSlot;
-                log.LogInfo("Host authenticated this peer as slot " + localSlot +
-                             " with authoritative snapshots enabled.");
+                log.LogWarning("Rejected peer handshake from " + remote + ".");
+            }
+            else if (result == SessionPacketResult.LocalAuthenticated)
+            {
+                log.LogInfo("Host authenticated this peer as slot " + LocalSlot +
+                            " with authoritative snapshots enabled.");
                 SetHudStatus(SessionHudStatus.Connected, "Connected to host.");
             }
-            else if (type == PacketType.HelloRejected && remote == ownerId && self != ownerId)
+            else if (result == SessionPacketResult.LocalRejected)
             {
-                SessionRejected rejected;
-                if (PacketCodec.TryDecodeRejected(packet, out rejected) &&
-                    rejected.SessionNonce == sessionNonce && rejected.Attempt == localAttempt)
-                {
-                    log.LogError("Host rejected handshake: " + rejected.Reason);
-                    SetHudStatus(SessionHudStatus.Error, "Host rejected connection: " + rejected.Reason);
-                    Leave();
-                }
+                log.LogError("Host rejected the authenticated handshake.");
+                SetHudStatus(SessionHudStatus.Error, "Host rejected connection.");
+                Leave();
             }
-            else if (type == PacketType.Disconnect)
+            else if (result == SessionPacketResult.PeerDisconnected)
             {
                 log.LogWarning("Peer ended Crawl Online session: " + remote);
-                SteamNetworking.CloseP2PSessionWithUser(remote);
-                if (self == ownerId && roster != null) roster.MarkDisconnected(remote.m_SteamID);
-                else if (remote == ownerId) Leave();
             }
-            else if (type == PacketType.SessionInput && self == ownerId && roster != null && receiveWindow != null)
+            else if (result == SessionPacketResult.EndSession)
             {
-                SessionInputFrame input;
-                byte assignedSlot;
-                if (!AuthoritativeCodec.TryDecodeInput(packet, out input) ||
-                    !roster.TryGetSlot(remote.m_SteamID, out assignedSlot) ||
-                    input.Input.PlayerId != assignedSlot || !receiveWindow.TryAcceptInput(input))
-                {
-                    log.LogWarning("Rejected stale or unauthorized input from " + remote);
-                    return;
-                }
-                Action<SessionInputFrame> callback = InputReceived;
-                if (callback != null) callback(input);
-            }
-            else if (type == PacketType.InputEvent && self == ownerId && roster != null && receiveWindow != null)
-            {
-                SessionInputFrame inputEvent;
-                byte assignedSlot;
-                if (!AuthoritativeCodec.TryDecodeInputEvent(packet, out inputEvent) ||
-                    !roster.TryGetSlot(remote.m_SteamID, out assignedSlot) ||
-                    inputEvent.Input.PlayerId != assignedSlot || !receiveWindow.TryAcceptInputEvent(inputEvent))
-                {
-                    log.LogWarning("Rejected stale or unauthorized input event from " + remote);
-                    return;
-                }
-                Action<SessionInputFrame> callback = InputEventReceived;
-                if (callback != null) callback(inputEvent);
-            }
-            else if (type == PacketType.Snapshot && remote == ownerId && self != ownerId &&
-                     localSlot != byte.MaxValue && receiveWindow != null)
-            {
-                WorldSnapshot snapshot;
-                if (!AuthoritativeCodec.TryDecodeSnapshot(packet, out snapshot) ||
-                    !receiveWindow.TryAcceptSnapshot(snapshot))
-                {
-                    log.LogWarning("Rejected stale or invalid authoritative snapshot.");
-                    return;
-                }
-                Action<WorldSnapshot> callback = SnapshotReceived;
-                if (callback != null) callback(snapshot);
-            }
-            else if (type == PacketType.SnapshotAck && self == ownerId && roster != null)
-            {
-                SnapshotAcknowledgement acknowledgement;
-                byte ignoredSlot;
-                if (!AuthoritativeCodec.TryDecodeAcknowledgement(packet, out acknowledgement) ||
-                    acknowledgement.SessionNonce != sessionNonce ||
-                    !roster.TryGetSlot(remote.m_SteamID, out ignoredSlot))
-                {
-                    log.LogWarning("Rejected invalid snapshot acknowledgement from " + remote);
-                    return;
-                }
-                uint previous;
-                if (!peerAcknowledgements.TryGetValue(remote.m_SteamID, out previous) ||
-                    SequenceWindow.IsNewer(acknowledgement.Sequence, previous))
-                {
-                    peerAcknowledgements[remote.m_SteamID] = acknowledgement.Sequence;
-                    SnapshotHistory history;
-                    if (peerSnapshotHistory.TryGetValue(remote.m_SteamID, out history))
-                        history.Acknowledge(acknowledgement.Sequence);
-                }
-            }
-            else
-            {
-                log.LogWarning("Rejected unexpected packet " + type + " from " + remote);
+                log.LogError("Authoritative peer ended or invalidated the session: " + remote);
+                Leave();
             }
         }
 
         private void OnSessionConnectFailed(P2PSessionConnectFail_t failure)
         {
             CSteamID remote = failure.m_steamIDRemote;
-            SteamNetworking.CloseP2PSessionWithUser(remote);
-            if (SteamUser.GetSteamID() == ownerId && roster != null)
-            {
-                roster.MarkDisconnected(remote.m_SteamID);
-            }
+            protocol.MarkTransportFailed(remote.m_SteamID);
             log.LogError("P2P session failed for " + remote + ": " +
                          (EP2PSessionError)failure.m_eP2PSessionError +
                           ". Rejoin the lobby to establish a fresh authenticated attempt.");
@@ -635,10 +485,7 @@ namespace CrawlOnline
             if ((change & departed) == 0) return;
 
             CSteamID peer = new CSteamID(update.m_ulSteamIDUserChanged);
-            SteamNetworking.CloseP2PSessionWithUser(peer);
-            if (roster != null) roster.Remove(peer.m_SteamID);
-            peerAcknowledgements.Remove(peer.m_SteamID);
-            peerSnapshotHistory.Remove(peer.m_SteamID);
+            protocol.RemovePeer(peer.m_SteamID);
             log.LogInfo("Lobby member departed and P2P state was cleared: " + peer);
             if (peer == ownerId && SteamUser.GetSteamID() != ownerId)
             {
@@ -648,21 +495,9 @@ namespace CrawlOnline
             }
         }
 
-        private void SendHello()
+        bool ISessionMembership.Contains(ulong peerId)
         {
-            localAttempt++;
-            if (localAttempt == 0) localAttempt = 1;
-            var hello = new SessionHello
-            {
-                SessionNonce = sessionNonce,
-                SenderId = SteamUser.GetSteamID().m_SteamID,
-                Attempt = localAttempt,
-                RequestedSlot = localSlot,
-                Capabilities = SessionCapabilities.Current,
-                GameBuild = gameBuild
-            };
-            Send(ownerId, PacketCodec.EncodeHello(hello), EP2PSend.k_EP2PSendReliable);
-            log.LogInfo("Sent authenticated hello attempt " + localAttempt + " to host " + ownerId);
+            return IsLobbyMember(new CSteamID(peerId));
         }
 
         private bool IsLobbyMember(CSteamID steamId)
@@ -689,20 +524,26 @@ namespace CrawlOnline
             return true;
         }
 
+        bool ISessionPacketTransport.Send(ulong peerId, byte[] packet, SessionDelivery delivery)
+        {
+            EP2PSend mode = delivery == SessionDelivery.Reliable
+                ? EP2PSend.k_EP2PSendReliable
+                : delivery == SessionDelivery.UnreliableNoDelay
+                    ? EP2PSend.k_EP2PSendUnreliableNoDelay
+                    : EP2PSend.k_EP2PSendUnreliable;
+            return Send(new CSteamID(peerId), packet, mode);
+        }
+
+        void ISessionPacketTransport.Close(ulong peerId)
+        {
+            SteamNetworking.CloseP2PSessionWithUser(new CSteamID(peerId));
+        }
+
         private void ResetSession()
         {
             lobbyId = CSteamID.Nil;
             ownerId = CSteamID.Nil;
-            roster = null;
-            sessionNonce = 0;
-            localAttempt = 0;
-            localSlot = byte.MaxValue;
-            receiveWindow = null;
-            peerAcknowledgements.Clear();
-            peerSnapshotHistory.Clear();
-            localInputSequence = 0;
-            localInputEventSequence = 0;
-            snapshotSequence = 0;
+            protocol.Reset();
             cancelPendingHost = false;
             cancelPendingJoin = false;
             joinPending = false;
@@ -715,6 +556,24 @@ namespace CrawlOnline
         {
             hudStatus = status;
             hudMessage = message ?? string.Empty;
+        }
+
+        private void OnInputReceived(SessionInputFrame input)
+        {
+            Action<SessionInputFrame> callback = InputReceived;
+            if (callback != null) callback(input);
+        }
+
+        private void OnInputEventReceived(SessionInputFrame input)
+        {
+            Action<SessionInputFrame> callback = InputEventReceived;
+            if (callback != null) callback(input);
+        }
+
+        private void OnSnapshotReceived(WorldSnapshot snapshot)
+        {
+            Action<WorldSnapshot> callback = SnapshotReceived;
+            if (callback != null) callback(snapshot);
         }
 
         private static ulong CreateNonce()
