@@ -2,6 +2,7 @@ using BepInEx.Logging;
 using CrawlOnline.Determinism;
 using CrawlOnline.Authoritative;
 using CrawlOnline.Diagnostics;
+using CrawlOnline.Menu;
 using UnityEngine;
 
 namespace CrawlOnline
@@ -15,6 +16,7 @@ namespace CrawlOnline
         private AuthoritativeSynchronizer synchronizer;
         private SessionHud hud;
         private MenuContractProbe menuProbe;
+        private NativeMainMenuIntegration nativeMenu;
 
         public CrawlOnlineRuntime(ManualLogSource logSource)
         {
@@ -24,12 +26,14 @@ namespace CrawlOnline
             harness = DeterminismHarness.TryCreate(log);
             hud = new SessionHud();
             menuProbe = MenuContractProbe.TryCreate(log);
+            nativeMenu = new NativeMainMenuIntegration(log, OnNativeOnlineSelected);
             log.LogInfo("Ready: F8 host, F7 invite, F9 leave, F5 help, F6 HUD");
         }
 
         public void Tick()
         {
             if (menuProbe != null) menuProbe.Tick();
+            if (nativeMenu != null) nativeMenu.Tick();
             if (Input.GetKeyDown(KeyCode.F5))
             {
                 hud.ToggleTutorial();
@@ -73,6 +77,11 @@ namespace CrawlOnline
             }
             hud = null;
             menuProbe = null;
+            if (nativeMenu != null)
+            {
+                nativeMenu.Dispose();
+                nativeMenu = null;
+            }
         }
 
         public void FixedTick()
@@ -89,6 +98,11 @@ namespace CrawlOnline
         public void DrawHud()
         {
             if (hud != null && session != null) hud.Draw(session.GetHudState());
+        }
+
+        private void OnNativeOnlineSelected()
+        {
+            log.LogInfo("Native ONLINE menu action selected; session submenu is the next integration stage.");
         }
     }
 }

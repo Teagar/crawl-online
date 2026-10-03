@@ -64,9 +64,18 @@ The implementation card should:
 7. Preserve `F7`, `F8`, and `F9` as alpha diagnostics until the complete native
    flow has passed local and remote validation.
 
-## Validation boundary
+## Implemented insertion
 
-This contract proves that native insertion is feasible and identifies the safe
-extension points. It does not yet prove that an inserted action dispatches to an
-original bridge, survives every menu transition, or has controller parity.
-Those claims belong to the implementation and menu-parity cards.
+The runtime integration now waits until the main menu is active with a valid
+selection, clones the legitimate menu's existing item-data template, and calls
+`InsertItem` at the anchored index. The rendered-item collection is the runtime
+source of truth: `InsertItem` materializes the new item while the serialized
+item-data template remains unchanged. The integration then restores the logical
+selection through `SetSelectedItem` and explicitly targets an original bridge
+component on the menu owner.
+
+An authenticated Linux smoke confirmed one `ONLINE` row between `START GAME`
+and `THE VAULT`, native focus/action animation, `W`/`S` navigation, and dispatch
+to `MsgCrawlOnline` without entering the local-game flow. Repeated scans did not
+create duplicates. Full controller/mouse parity, scene re-entry, resolutions,
+and the Online submenu remain the responsibility of subsequent cards.
