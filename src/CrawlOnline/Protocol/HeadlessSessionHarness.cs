@@ -75,6 +75,9 @@ namespace CrawlOnline.Protocol
         private readonly Queue<string> timeline = new Queue<string>();
         private readonly HeadlessSessionPeer host;
 
+        public event Action<SessionInputFrame> HostInputReceived;
+        public event Action<SessionInputFrame> HostInputEventReceived;
+
         public HeadlessSessionHarness(uint scenarioSeed, ulong sessionNonce,
             GameBuildFingerprint authoritativeBuild, SessionNetworkProfile defaultProfile)
         {
@@ -87,6 +90,16 @@ namespace CrawlOnline.Protocol
             network = new InMemorySessionNetwork(seed, defaultProfile ?? new SessionNetworkProfile(),
                 1024, 64 * 1024, 256);
             host = CreatePeer(1, hostBuild);
+            host.Engine.InputReceived += delegate(SessionInputFrame input)
+            {
+                Action<SessionInputFrame> callback = HostInputReceived;
+                if (callback != null) callback(input);
+            };
+            host.Engine.InputEventReceived += delegate(SessionInputFrame input)
+            {
+                Action<SessionInputFrame> callback = HostInputEventReceived;
+                if (callback != null) callback(input);
+            };
             host.Engine.StartHost(host.Id, nonce, 4);
             Record("host started id=1");
         }

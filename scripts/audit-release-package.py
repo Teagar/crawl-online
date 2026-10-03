@@ -59,13 +59,17 @@ plugins = manifest.get("plugins")
 if not isinstance(plugins, dict) or set(plugins) != {"CrawlOnline.dll", "CrawlOnline.Runtime.dll"}:
     fail("manifest plugin set mismatch")
 for name, expected_hash in plugins.items():
-    actual_hash = hashlib.sha256(files["plugins/" + name]).hexdigest()
+    payload = files["plugins/" + name]
+    actual_hash = hashlib.sha256(payload).hexdigest()
     if expected_hash != actual_hash:
         fail("plugin hash mismatch: " + name)
     try:
-        inspect_managed_pe(files["plugins/" + name], name)
+        inspect_managed_pe(payload, name)
     except CompatibilityError as error:
         fail("Windows compatibility: " + str(error))
+    for marker in (b"DevSimulationSession", b"SimulationEnabledBuildMarker"):
+        if marker in payload:
+            fail("development simulation build cannot be released: " + name)
 
 bepinex = manifest.get("bepInEx")
 if not isinstance(bepinex, dict) or bepinex.get("version") != "5.4.11.0":

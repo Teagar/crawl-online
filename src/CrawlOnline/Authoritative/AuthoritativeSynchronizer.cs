@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using BepInEx.Logging;
 using CrawlOnline.Determinism;
 using CrawlOnline.Protocol;
+using CrawlOnline.Online;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -13,7 +14,7 @@ namespace CrawlOnline.Authoritative
     {
         private const int SnapshotIntervalFrames = 6;
         private const float UnitsPerStep = 10000f;
-        private readonly SteamLobbySession session;
+        private readonly IOnlineSession session;
         private readonly ManualLogSource log;
         private readonly AuthoritativeInputBridge inputBridge = new AuthoritativeInputBridge();
         private readonly Dictionary<GameObject, uint> hostEnemyIds = new Dictionary<GameObject, uint>();
@@ -41,7 +42,7 @@ namespace CrawlOnline.Authoritative
         private bool requestedGameInProgress;
         private int requestedLevel = -1;
 
-        public AuthoritativeSynchronizer(SteamLobbySession lobbySession, ManualLogSource logSource)
+        public AuthoritativeSynchronizer(IOnlineSession lobbySession, ManualLogSource logSource)
         {
             session = lobbySession;
             log = logSource;

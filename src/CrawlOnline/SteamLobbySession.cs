@@ -9,7 +9,7 @@ using Steamworks;
 
 namespace CrawlOnline
 {
-    internal sealed class SteamLobbySession : IDisposable, ISessionPacketTransport, ISessionMembership
+    internal sealed class SteamLobbySession : IOnlineSession, ISessionPacketTransport, ISessionMembership
     {
         private const int Channel = 7;
         private const int MaxPacketSize = 64 * 1024;

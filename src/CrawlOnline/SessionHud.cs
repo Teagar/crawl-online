@@ -21,6 +21,8 @@ namespace CrawlOnline
         private static readonly Color Good = new Color(0.57f, 0.70f, 0.38f, 1f);
         private static readonly Color Warning = new Color(0.83f, 0.60f, 0.24f, 1f);
         private static readonly Color Bad = new Color(0.72f, 0.22f, 0.18f, 1f);
+        private static readonly Color VersionText = new Color(0.36f, 0.30f, 0.29f, 0.94f);
+        private static readonly Color VersionShadow = new Color(0.035f, 0.025f, 0.03f, 0.78f);
 
         private bool minimized;
         private bool detailsVisible;
@@ -32,6 +34,9 @@ namespace CrawlOnline
         private GUIStyle roleStyle;
         private GUIStyle bodyStyle;
         private GUIStyle smallStyle;
+        private GUIStyle watermarkStyle;
+        private GUIStyle watermarkCountStyle;
+        private Font versionFont;
 
         public void ToggleMinimized()
         {
@@ -51,7 +56,7 @@ namespace CrawlOnline
         public void Draw(SessionHudState state, bool nativeMenuActive, bool onlineOperationActive)
         {
             if (state == null) return;
-            if (nativeMenuActive) return;
+            if (nativeMenuActive && !state.IsSimulation) return;
             bool hasNotice = !string.IsNullOrEmpty(notice);
             if (state.Status == SessionHudStatus.Offline && !hasNotice && !onlineOperationActive) return;
 
@@ -70,9 +75,15 @@ namespace CrawlOnline
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
             try
             {
-                DrawFrame(new Rect(x, y, width, height));
-                if (detailsVisible && !minimized) DrawExpanded(state, x, y, width);
-                else DrawContext(state, x, y, width, hasNotice ? notice : null);
+                bool watermarkOnly = nativeMenuActive && state.IsSimulation;
+                if (!watermarkOnly)
+                {
+                    DrawFrame(new Rect(x, y, width, height));
+                    if (detailsVisible && !minimized) DrawExpanded(state, x, y, width);
+                    else DrawContext(state, x, y, width, hasNotice ? notice : null);
+                }
+                if (state.IsSimulation)
+                    DrawSimulationWatermark(state, logicalScreenWidth, logicalScreenHeight);
             }
             finally
             {
@@ -107,7 +118,9 @@ namespace CrawlOnline
 
             DrawSolid(new Rect(x + 10f, y + 122f, width - 20f, 1f), Border);
             GUI.Label(new Rect(x + 12f, y + 130f, width - 24f, 18f),
-                "F8  HOST     F7  INVITE     F9  LEAVE", smallStyle);
+                state.IsSimulation
+                    ? "F7  DROP / RECONNECT     F9  STOP"
+                    : "F8  HOST     F7  INVITE     F9  LEAVE", smallStyle);
             GUI.Label(new Rect(x + 12f, y + 153f, width - 24f, 18f),
                 "F5  DETAILS     F6  MINIMIZE", smallStyle);
         }
@@ -129,16 +142,60 @@ namespace CrawlOnline
         private void EnsureStyles(int scale)
         {
             Font font = GUI.skin != null ? GUI.skin.font : null;
-            if (styledScale == scale && styledFont == font && titleStyle != null) return;
+            Font detectedVersionFont = FindVersionFont();
+            if (detectedVersionFont == null) detectedVersionFont = font;
+            if (styledScale == scale && styledFont == font && versionFont == detectedVersionFont &&
+                titleStyle != null) return;
 
             styledScale = scale;
             styledFont = font;
+            versionFont = detectedVersionFont;
             titleStyle = CreateStyle(font, Text, 14, FontStyle.Bold, TextAnchor.MiddleLeft);
             statusStyle = CreateStyle(font, Text, 11, FontStyle.Bold, TextAnchor.MiddleRight);
             roleStyle = CreateStyle(font, Text, 11, FontStyle.Bold, TextAnchor.MiddleLeft);
             bodyStyle = CreateStyle(font, MutedText, 11, FontStyle.Normal, TextAnchor.UpperLeft);
             bodyStyle.wordWrap = true;
             smallStyle = CreateStyle(font, MutedText, 10, FontStyle.Bold, TextAnchor.MiddleLeft);
+            watermarkStyle = CreateStyle(versionFont, VersionText, 36, FontStyle.Normal,
+                TextAnchor.LowerLeft);
+            watermarkCountStyle = CreateStyle(versionFont, VersionText, 72, FontStyle.Normal,
+                TextAnchor.LowerLeft);
+        }
+
+        private void DrawSimulationWatermark(SessionHudState state, float screenWidth, float screenHeight)
+        {
+            Rect title = new Rect(14f, screenHeight - 96f, 510f, 58f);
+            Rect count = new Rect(14f, screenHeight - 85f, 260f, 80f);
+            DrawWatermarkLabel(title, state.SimulationLabel, watermarkStyle);
+            DrawWatermarkLabel(count, state.SimulationPlayerCountLabel, watermarkCountStyle);
+        }
+
+        private static void DrawWatermarkLabel(Rect rect, string label, GUIStyle style)
+        {
+            Color textColor = style.normal.textColor;
+            style.normal.textColor = VersionShadow;
+            style.hover.textColor = VersionShadow;
+            style.active.textColor = VersionShadow;
+            style.focused.textColor = VersionShadow;
+            GUI.Label(new Rect(rect.x + 2f, rect.y + 2f, rect.width, rect.height), label, style);
+            style.normal.textColor = textColor;
+            style.hover.textColor = textColor;
+            style.active.textColor = textColor;
+            style.focused.textColor = textColor;
+            GUI.Label(rect, label, style);
+        }
+
+        private static Font FindVersionFont()
+        {
+            UnityEngine.Object[] textMeshes = Resources.FindObjectsOfTypeAll(typeof(TextMesh));
+            for (int i = 0; i < textMeshes.Length; i++)
+            {
+                TextMesh text = textMeshes[i] as TextMesh;
+                if (text != null && !string.IsNullOrEmpty(text.text) &&
+                    text.text.StartsWith("v1.", System.StringComparison.OrdinalIgnoreCase) &&
+                    text.font != null) return text.font;
+            }
+            return null;
         }
 
         private static GUIStyle CreateStyle(Font font, Color color, int size, FontStyle fontStyle, TextAnchor alignment)

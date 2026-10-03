@@ -20,6 +20,7 @@ auditor = root / 'scripts/audit-release-package.py'
 compatibility_auditor = root / 'scripts/audit-windows-compatibility.py'
 docs = (root / 'docs/installation.md').read_text()
 bootstrap_source = (root / 'src/CrawlOnline.Bootstrap/CrawlOnlinePlugin.cs').read_text()
+simulation_source = (root / 'src/CrawlOnline/Development/DevSimulationSession.cs').read_text()
 
 for command in ('install', 'update', 'uninstall', 'diagnose'):
     assert command in linux and command in windows
@@ -36,6 +37,9 @@ assert '[BepInPlugin(Id, Name, LoaderVersion)]' in bootstrap_source
 assert 'LoaderVersion = "0.2.0"' in bootstrap_source
 assert 'Version = "0.2.0-alpha.1"' in bootstrap_source
 assert 'new object[] { Logger, gameBuildFingerprint }' in bootstrap_source
+assert '#if CRAWLONLINE_DEV_SIMULATION' in bootstrap_source and '#if CRAWLONLINE_DEV_SIMULATION' in simulation_source
+assert 'SteamMatchmaking.' not in simulation_source and 'SteamNetworking.' not in simulation_source
+assert 'GameApi.' not in simulation_source and 'SystemGame' not in simulation_source
 assert 'multiplayer gameplay end-to-end validated' in docs
 assert '.crawl-online-backup.' in linux and 'activation_started=true' in linux
 assert '.crawl-online-backup-' in windows and '$activationStarted = $true' in windows
@@ -128,6 +132,22 @@ with tempfile.TemporaryDirectory() as temp:
     assert manifest['plugins']['CrawlOnline.dll'] == hashlib.sha256(bootstrap_bytes).hexdigest()
     assert manifest['bepInEx']['linux-x64']['sha256'] == hashlib.sha256(linux_loader.read_bytes()).hexdigest()
     subprocess.run([str(auditor), str(archive), 'test-1'], check=True, stdout=subprocess.PIPE, text=True)
+
+    simulation_archive = output / 'CrawlOnline-test-1-simulation.zip'
+    simulation_plugin = runtime_bytes + b'DevSimulationSession'
+    simulation_manifest = dict(manifest)
+    simulation_manifest['plugins'] = dict(manifest['plugins'])
+    simulation_manifest['plugins']['CrawlOnline.Runtime.dll'] = hashlib.sha256(simulation_plugin).hexdigest()
+    with zipfile.ZipFile(archive) as source, zipfile.ZipFile(simulation_archive, 'w') as destination:
+        for info in source.infolist():
+            payload = source.read(info)
+            if info.filename.endswith('/plugins/CrawlOnline.Runtime.dll'):
+                payload = simulation_plugin
+            elif info.filename.endswith('/CrawlOnline.release.json'):
+                payload = json.dumps(simulation_manifest).encode()
+            destination.writestr(info, payload)
+    simulation_audit = subprocess.run([str(auditor), str(simulation_archive), 'test-1'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert simulation_audit.returncode != 0 and 'development simulation build cannot be released' in simulation_audit.stderr
 
     incompatible_archive = output / 'CrawlOnline-test-1-incompatible.zip'
     with zipfile.ZipFile(archive) as source, zipfile.ZipFile(incompatible_archive, 'w') as destination:

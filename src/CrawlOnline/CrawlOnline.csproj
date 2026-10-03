@@ -5,6 +5,8 @@
     <RootNamespace>CrawlOnline</RootNamespace>
     <CrawlGameDir Condition="'$(CrawlGameDir)' == ''">$(CRAWL_GAME_DIR)</CrawlGameDir>
     <BepInExRoot Condition="'$(BepInExRoot)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\bepinex</BepInExRoot>
+    <EnableLocalSimulation Condition="'$(EnableLocalSimulation)' == ''">false</EnableLocalSimulation>
+    <DefineConstants Condition="'$(EnableLocalSimulation)' == 'true'">$(DefineConstants);CRAWLONLINE_DEV_SIMULATION</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

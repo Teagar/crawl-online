@@ -8,6 +8,10 @@ using UnityEngine;
 
 namespace CrawlOnline.Bootstrap
 {
+#if CRAWLONLINE_DEV_SIMULATION
+    internal sealed class SimulationEnabledBuildMarker { }
+#endif
+
     // BepInEx 5 parses this field as System.Version and rejects prerelease
     // suffixes. Keep its loader identity numeric while advertising the full
     // release/build string to Crawl Online peers and diagnostics.
@@ -29,6 +33,9 @@ namespace CrawlOnline.Bootstrap
         private MethodInfo drawHud;
         private bool waitingLogged;
         private string gameBuildFingerprint;
+#if CRAWLONLINE_DEV_SIMULATION
+        private bool localSimulationEnabled;
+#endif
 
         private void Awake()
         {
@@ -62,6 +69,12 @@ namespace CrawlOnline.Bootstrap
 
             gameBuildFingerprint = gameAssemblyHash.ToLowerInvariant();
             Logger.LogInfo("Compatibility fingerprint accepted");
+#if CRAWLONLINE_DEV_SIMULATION
+            localSimulationEnabled = Config.Bind("Development", "EnableLocalSimulation", false,
+                "Enables the isolated local multiplayer simulation. Never creates or joins Steam lobbies.").Value;
+            if (localSimulationEnabled)
+                Logger.LogWarning("Development SIMULATION configuration accepted by a simulation-enabled build.");
+#endif
         }
 
         private void Update()
@@ -129,7 +142,12 @@ namespace CrawlOnline.Bootstrap
                 string directory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
                 Assembly assembly = Assembly.LoadFrom(Path.Combine(directory, "CrawlOnline.Runtime.dll"));
                 Type type = assembly.GetType("CrawlOnline.CrawlOnlineRuntime", true);
+#if CRAWLONLINE_DEV_SIMULATION
+                runtime = Activator.CreateInstance(type,
+                    new object[] { Logger, gameBuildFingerprint, localSimulationEnabled });
+#else
                 runtime = Activator.CreateInstance(type, new object[] { Logger, gameBuildFingerprint });
+#endif
                 tick = type.GetMethod("Tick", BindingFlags.Public | BindingFlags.Instance);
                 shutdown = type.GetMethod("Shutdown", BindingFlags.Public | BindingFlags.Instance);
                 fixedTick = type.GetMethod("FixedTick", BindingFlags.Public | BindingFlags.Instance);

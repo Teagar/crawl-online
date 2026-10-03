@@ -1,3 +1,4 @@
+using System;
 using BepInEx.Logging;
 using CrawlOnline.Determinism;
 using CrawlOnline.Authoritative;
@@ -5,6 +6,9 @@ using CrawlOnline.Diagnostics;
 using CrawlOnline.Menu;
 using CrawlOnline.Online;
 using CrawlOnline.Protocol;
+#if CRAWLONLINE_DEV_SIMULATION
+using CrawlOnline.Development;
+#endif
 using UnityEngine;
 
 namespace CrawlOnline
@@ -13,7 +17,7 @@ namespace CrawlOnline
     {
         public const string Version = "0.2.0-alpha.1";
         private readonly ManualLogSource log;
-        private SteamLobbySession session;
+        private IOnlineSession session;
         private DeterminismHarness harness;
         private AuthoritativeSynchronizer synchronizer;
         private SessionHud hud;
@@ -22,14 +26,45 @@ namespace CrawlOnline
         private OnlineFlowStateMachine onlineFlow;
         private long onlineOperation;
         private ulong[] friendLobbies = new ulong[0];
+#if CRAWLONLINE_DEV_SIMULATION
+        private bool simulationMode;
+#endif
 
         public CrawlOnlineRuntime(ManualLogSource logSource, string gameAssemblySha256)
         {
             log = logSource;
-            session = new SteamLobbySession(log, GameBuildFingerprint.Parse(gameAssemblySha256));
+            InitialiseSession(GameBuildFingerprint.Parse(gameAssemblySha256), false);
+        }
+
+#if CRAWLONLINE_DEV_SIMULATION
+        public CrawlOnlineRuntime(ManualLogSource logSource, string gameAssemblySha256,
+            bool enableLocalSimulation)
+        {
+            log = logSource;
+            simulationMode = enableLocalSimulation;
+            InitialiseSession(GameBuildFingerprint.Parse(gameAssemblySha256), enableLocalSimulation);
+        }
+#endif
+
+        private void InitialiseSession(GameBuildFingerprint gameBuild, bool enableLocalSimulation)
+        {
+#if CRAWLONLINE_DEV_SIMULATION
+            simulationMode = enableLocalSimulation;
+            session = enableLocalSimulation
+                ? (IOnlineSession)new DevSimulationSession(log, gameBuild)
+                : new SteamLobbySession(log, gameBuild);
+#else
+            if (enableLocalSimulation)
+                throw new InvalidOperationException("Local simulation is unavailable in this build.");
+            session = new SteamLobbySession(log, gameBuild);
+#endif
             session.FriendLobbiesDiscovered += OnFriendLobbiesDiscovered;
             session.LobbyJoinRequested += OnLobbyJoinRequested;
+#if CRAWLONLINE_DEV_SIMULATION
+            if (!enableLocalSimulation) synchronizer = new AuthoritativeSynchronizer(session, log);
+#else
             synchronizer = new AuthoritativeSynchronizer(session, log);
+#endif
             harness = DeterminismHarness.TryCreate(log);
             hud = new SessionHud();
             menuProbe = MenuContractProbe.TryCreate(log);
@@ -37,14 +72,24 @@ namespace CrawlOnline
             nativeMenu = new NativeMainMenuIntegration(log, OnNativeOnlineSelected,
                 OnNativeHostSelected, OnNativeJoinSelected, OnNativeOnlineBack,
                 OnNativeInviteSelected, OnNativeCancelSelected, OnNativeJoinRefresh,
-                OnNativeFriendSelected);
-            log.LogInfo("Ready: F8 host, F7 invite, F9 leave, F5 help, F6 HUD");
+                OnNativeFriendSelected, enableLocalSimulation);
+            log.LogInfo(enableLocalSimulation
+                ? "SIMULATION ready: F8 start, F7 drop/reconnect, F9 stop; Steam lobby APIs disabled."
+                : "Ready: F8 host, F7 invite, F9 leave, F5 help, F6 HUD");
         }
 
         public void Tick()
         {
             if (menuProbe != null) menuProbe.Tick();
             if (nativeMenu != null) nativeMenu.Tick();
+#if CRAWLONLINE_DEV_SIMULATION
+            if (simulationMode && session.InLobby &&
+                (nativeMenu == null || !nativeMenu.IsActiveMainMenu))
+            {
+                log.LogWarning("SIMULATION left the safe main-menu scope and was stopped before game mutation.");
+                session.Leave();
+            }
+#endif
             if (Input.GetKeyDown(KeyCode.F5))
             {
                 hud.ToggleTutorial();

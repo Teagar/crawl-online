@@ -21,6 +21,7 @@ namespace CrawlOnline.Menu
         private readonly Action refreshSelected;
         private readonly Action<int> friendSelected;
         private readonly Type menuMainType;
+        private readonly bool simulationMode;
         private int framesUntilScan;
         private object installedMenu;
         private MainMenuOnlineBridge bridge;
@@ -29,7 +30,8 @@ namespace CrawlOnline.Menu
 
         public NativeMainMenuIntegration(ManualLogSource logSource, Func<bool> selectedCallback,
             Action hostCallback, Action joinCallback, Action backCallback, Action inviteCallback,
-            Action cancelCallback, Action refreshCallback, Action<int> friendCallback)
+            Action cancelCallback, Action refreshCallback, Action<int> friendCallback,
+            bool localSimulationMode)
         {
             log = logSource;
             selected = selectedCallback;
@@ -40,6 +42,7 @@ namespace CrawlOnline.Menu
             cancelSelected = cancelCallback;
             refreshSelected = refreshCallback;
             friendSelected = friendCallback;
+            simulationMode = localSimulationMode;
             menuMainType = AccessTools.TypeByName("MenuMain");
         }
 
@@ -200,7 +203,9 @@ namespace CrawlOnline.Menu
                 if (data == null || data.Count < 2 || owner == null)
                     throw new InvalidOperationException("Main-menu template is unavailable");
                 RemoveAllRenderedItems(installedMenu);
-                InsertRenderedItem(installedMenu, 0, data[0], "INVITE FRIENDS", "MsgCrawlOnlineInvite", owner);
+                InsertRenderedItem(installedMenu, 0, data[0],
+                    simulationMode ? "DROP / RECONNECT" : "INVITE FRIENDS",
+                    "MsgCrawlOnlineInvite", owner);
                 InsertRenderedItem(installedMenu, 1, data[1], "CANCEL", "MsgCrawlOnlineCancel", owner);
                 SetMenuActive(installedMenu);
                 SetSelectedItem(installedMenu, 0);
@@ -387,14 +392,19 @@ namespace CrawlOnline.Menu
                 throw new InvalidOperationException("Main-menu template is unavailable");
 
             RemoveAllRenderedItems(menu);
-            InsertRenderedItem(menu, 0, data[0], "HOST GAME", "MsgCrawlOnlineHost", owner);
-            InsertRenderedItem(menu, 1, data[1], "JOIN FRIEND", "MsgCrawlOnlineJoin", owner);
-            InsertRenderedItem(menu, 2, data[1], "BACK", "MsgCrawlOnlineBack", owner);
+            InsertRenderedItem(menu, 0, data[0], simulationMode ? "START SIMULATION" : "HOST GAME",
+                "MsgCrawlOnlineHost", owner);
+            if (!simulationMode)
+                InsertRenderedItem(menu, 1, data[1], "JOIN FRIEND", "MsgCrawlOnlineJoin", owner);
+            int backIndex = simulationMode ? 1 : 2;
+            InsertRenderedItem(menu, backIndex, data[1], "BACK", "MsgCrawlOnlineBack", owner);
             SetMenuActive(menu);
             SetSelectedItem(menu, 0);
 
             IList items = ReadRequiredField(menu.GetType(), menu, "m_items") as IList;
-            string[] expected = { "MsgCrawlOnlineHost", "MsgCrawlOnlineJoin", "MsgCrawlOnlineBack" };
+            string[] expected = simulationMode
+                ? new[] { "MsgCrawlOnlineHost", "MsgCrawlOnlineBack" }
+                : new[] { "MsgCrawlOnlineHost", "MsgCrawlOnlineJoin", "MsgCrawlOnlineBack" };
             if (items == null || !MessagesEqual(ReadMessages(items), expected))
                 throw new InvalidOperationException("Online submenu invariant failed");
         }

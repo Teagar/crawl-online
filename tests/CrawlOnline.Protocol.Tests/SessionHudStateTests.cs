@@ -6,6 +6,30 @@ namespace CrawlOnline.Protocol.Tests;
 public sealed class SessionHudStateTests
 {
     [Fact]
+    public void SimulationStateIsExplicitAndNeverInferredFromSlots()
+    {
+        var normal = new SessionHudState(SessionHudStatus.Connected, true, 0,
+            new[] { true, true, true, true }, "normal");
+        var simulation = new SessionHudState(SessionHudStatus.Connected, true, 0,
+            new[] { true, true, true, true }, "sim", true);
+
+        Assert.False(normal.IsSimulation);
+        Assert.True(simulation.IsSimulation);
+    }
+
+    [Fact]
+    public void SimulationProjectionCountsHostAndThreeGhosts()
+    {
+        var simulation = new SessionHudState(SessionHudStatus.Connected, true, 0,
+            new[] { true, true, true, true }, "SIMULATION", true);
+
+        Assert.Equal(4, simulation.ConnectedPlayerCount);
+        Assert.Equal("SIMULATION", simulation.SimulationLabel);
+        Assert.Equal("4/4", simulation.SimulationPlayerCountLabel);
+        for (int slot = 0; slot < 4; slot++) Assert.True(simulation.IsSlotConnected(slot));
+    }
+
+    [Fact]
     public void HostProjectionShowsOnlyConnectedSlots()
     {
         var state = new SessionHudState(SessionHudStatus.Connected, true, 0,
