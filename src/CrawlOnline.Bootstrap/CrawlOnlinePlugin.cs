@@ -8,11 +8,15 @@ using UnityEngine;
 
 namespace CrawlOnline.Bootstrap
 {
-    [BepInPlugin(Id, Name, Version)]
+    // BepInEx 5 parses this field as System.Version and rejects prerelease
+    // suffixes. Keep its loader identity numeric while advertising the full
+    // release/build string to Crawl Online peers and diagnostics.
+    [BepInPlugin(Id, Name, LoaderVersion)]
     public sealed class CrawlOnlinePlugin : BaseUnityPlugin
     {
         public const string Id = "dev.teagar.crawl-online";
         public const string Name = "Crawl Online";
+        public const string LoaderVersion = "0.2.0";
         public const string Version = "0.2.0-alpha.1";
         private const string SupportedUnityVersion = "5.4.2f2";
         private const string SupportedLinuxGameAssemblySha256 = "d6f169535cf2123568359550d75fe1a9924948e04d8d0beb2eed7eb187542f84";

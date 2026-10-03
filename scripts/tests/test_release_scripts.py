@@ -14,6 +14,7 @@ windows = (root / 'scripts/install-release-windows.ps1').read_text()
 packager = (root / 'scripts/package-release.sh').read_text()
 auditor = root / 'scripts/audit-release-package.py'
 docs = (root / 'docs/installation.md').read_text()
+bootstrap_source = (root / 'src/CrawlOnline.Bootstrap/CrawlOnlinePlugin.cs').read_text()
 
 for command in ('install', 'update', 'uninstall', 'diagnose'):
     assert command in linux and command in windows
@@ -26,6 +27,9 @@ assert 'BepInEx and every other plugin were preserved' in windows
 assert 'BepInEx_unix_5.4.11.0.zip' in packager
 assert 'BepInEx_x86_5.4.11.0.zip' in packager
 assert 'audit-release-package.py' in packager
+assert '[BepInPlugin(Id, Name, LoaderVersion)]' in bootstrap_source
+assert 'LoaderVersion = "0.2.0"' in bootstrap_source
+assert 'Version = "0.2.0-alpha.1"' in bootstrap_source
 assert 'multiplayer gameplay end-to-end validated' in docs
 assert '.crawl-online-backup.' in linux and 'activation_started=true' in linux
 assert '.crawl-online-backup-' in windows and '$activationStarted = $true' in windows

@@ -12,6 +12,10 @@
    before changing files. An unknown game build stops safely; do not bypass that
    check unless you have reviewed the update.
 
+The BepInEx console identifies this prerelease with the loader-compatible numeric
+version `0.2.0`; Crawl Online diagnostics and Steam lobby metadata use the full
+release version `0.2.0-alpha.1`.
+
 ## Windows (32-bit Crawl)
 
 Open PowerShell in the extracted release folder and run:
