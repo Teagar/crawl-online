@@ -3,19 +3,17 @@ using Xunit;
 
 namespace CrawlOnline.Protocol.Tests;
 
-public sealed class DeferredMenuFocusTests
+public sealed class BoundedMenuFocusObservationTests
 {
     [Fact]
-    public void OnlyTheLatestReconstructedMenuMayReapplyFocus()
+    public void ObservationEndsAfterItsFixedBound()
     {
-        var focus = new DeferredMenuFocus();
+        var observation = new BoundedMenuFocusObservation();
+        observation.Begin();
 
-        int mainMenu = focus.Request();
-        int hostWaiting = focus.Request();
-        int restoredMainMenu = focus.Request();
+        for (int sample = 0; sample < BoundedMenuFocusObservation.SampleCount; sample++)
+            Assert.True(observation.TryTakeSample());
 
-        Assert.False(focus.IsCurrent(mainMenu));
-        Assert.False(focus.IsCurrent(hostWaiting));
-        Assert.True(focus.IsCurrent(restoredMainMenu));
+        Assert.False(observation.TryTakeSample());
     }
 }

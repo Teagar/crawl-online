@@ -151,7 +151,7 @@ namespace CrawlOnline.Menu
             int originalCount = items.Count;
             InvokeReflected(insert, menu, new[] { (object)plan.Index, itemData }, "InsertItem");
             int restoredSelection = selectedIndex >= plan.Index ? selectedIndex + 1 : selectedIndex;
-            SetSelectedItemAndReapply(menu, restoredSelection);
+            SetSelectedItemAndObserve(menu, restoredSelection, "install-online");
             IList installedItems = ReadRequiredField(menu.GetType(), menu, "m_items") as IList;
             if (installedItems == null)
                 throw new InvalidOperationException("Rendered menu items disappeared after insertion");
@@ -191,6 +191,7 @@ namespace CrawlOnline.Menu
             bridge.Initialise(OpenSubmenu, OnHostSelected, OnJoinSelected, CloseSubmenu,
                 OnInviteSelected, OnCancelSelected);
             bridge.InitialiseJoin(OnRefreshSelected, OnFriendSelected);
+            bridge.InitialiseFocusProbe(log);
         }
 
         public void ShowHostWaiting()
@@ -208,7 +209,7 @@ namespace CrawlOnline.Menu
                     "MsgCrawlOnlineInvite", owner);
                 InsertRenderedItem(installedMenu, 1, data[1], "CANCEL", "MsgCrawlOnlineCancel", owner);
                 SetMenuActive(installedMenu);
-                SetSelectedItemAndReapply(installedMenu, 0);
+                SetSelectedItemAndObserve(installedMenu, 0, "host-waiting");
                 log.LogInfo("Native Online submenu entered host waiting mode.");
             }
             catch (Exception exception)
@@ -311,7 +312,7 @@ namespace CrawlOnline.Menu
                 for (int i = 0; i < labels.Length; i++)
                     InsertRenderedItem(installedMenu, i, data[Math.Min(i, 1)], labels[i], messages[i], owner);
                 SetMenuActive(installedMenu);
-                SetSelectedItemAndReapply(installedMenu, selectedIndex);
+                SetSelectedItemAndObserve(installedMenu, selectedIndex, "join-menu");
             }
             catch (Exception exception)
             {
@@ -399,7 +400,7 @@ namespace CrawlOnline.Menu
             int backIndex = simulationMode ? 1 : 2;
             InsertRenderedItem(menu, backIndex, data[1], "BACK", "MsgCrawlOnlineBack", owner);
             SetMenuActive(menu);
-            SetSelectedItemAndReapply(menu, 0);
+            SetSelectedItemAndObserve(menu, 0, "open-submenu");
 
             IList items = ReadRequiredField(menu.GetType(), menu, "m_items") as IList;
             string[] expected = simulationMode
@@ -421,7 +422,8 @@ namespace CrawlOnline.Menu
             if (includeOnline)
                 InsertRenderedItem(menu, 1, data[1], "ONLINE", NativeMenuContract.OnlineMessage, owner);
             SetMenuActive(menu);
-            SetSelectedItemAndReapply(menu, includeOnline ? 1 : 0);
+            SetSelectedItemAndObserve(menu, includeOnline ? 1 : 0,
+                includeOnline ? "restore-online" : "restore-original");
         }
 
         private void TryRestoreMainMenuWithOnlineFocus()
@@ -487,14 +489,46 @@ namespace CrawlOnline.Menu
             InvokeReflected(method, menu, new object[] { index }, "SetSelectedItem");
         }
 
-        private void SetSelectedItemAndReapply(object menu, int index)
+        private void SetSelectedItemAndObserve(object menu, int index, string transition)
         {
+            if (bridge != null)
+                bridge.ObserveFocus(transition, delegate { return DescribeFocus(menu, index); });
             SetSelectedItem(menu, index);
-            if (bridge == null) return;
-            bridge.ReapplyFocusNextFrame(delegate
+        }
+
+        private static string DescribeFocus(object menu, int requestedIndex)
+        {
+            Type type = menu.GetType();
+            IList items = ReadRequiredField(type, menu, "m_items") as IList;
+            object selected = ReadRequiredField(type, menu, "m_selectedItem");
+            object active = ReadRequiredField(type, menu, "m_active");
+            object initialised = ReadRequiredField(type, menu, "m_initialised");
+            object scroll = ReadRequiredField(type, menu, "m_scrollOffset");
+            string message = "<none>";
+            string itemState = "<none>";
+            if (items != null && selected is int && (int)selected >= 0 && (int)selected < items.Count)
             {
-                SetSelectedItem(menu, index);
-            });
+                object item = items[(int)selected];
+                message = ReadRequiredField(item.GetType(), item, "m_message") as string ?? "<null>";
+                itemState = DescribeItemState(item);
+            }
+            return "requested=" + requestedIndex + " selected=" + selected + " active=" + active +
+                " initialised=" + initialised + " scroll=" + scroll + " count=" +
+                (items == null ? 0 : items.Count) + " message=" + message + " item=" + itemState;
+        }
+
+        private static string DescribeItemState(object item)
+        {
+            Type type = item.GetType();
+            return "actioning=" + ReadOptionalField(type, item, "m_actioning") +
+                ",actionWait=" + ReadOptionalField(type, item, "m_actionWaitTime") +
+                ",controller=" + ReadOptionalField(type, item, "m_actionedControllerId");
+        }
+
+        private static object ReadOptionalField(Type type, object instance, string name)
+        {
+            FieldInfo field = AccessTools.Field(type, name);
+            return field == null ? "<absent>" : field.GetValue(instance);
         }
 
         private static void SetMenuActive(object menu)

@@ -17,6 +17,6 @@
     <Compile Include="../../src/CrawlOnline/Online/OnlineFlowStateMachine.cs" Link="OnlineFlowStateMachine.cs" />
     <Compile Include="../../src/CrawlOnline/Online/OnlineSessionAccessPolicy.cs" Link="OnlineSessionAccessPolicy.cs" />
     <Compile Include="../../src/CrawlOnline/Online/FriendLobbyList.cs" Link="FriendLobbyList.cs" />
-    <Compile Include="../../src/CrawlOnline/Menu/DeferredMenuFocus.cs" Link="DeferredMenuFocus.cs" />
+    <Compile Include="../../src/CrawlOnline/Menu/BoundedMenuFocusObservation.cs" Link="BoundedMenuFocusObservation.cs" />
   </ItemGroup>
 </Project>

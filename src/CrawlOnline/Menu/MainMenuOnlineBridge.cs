@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using BepInEx.Logging;
 using UnityEngine;
 
 namespace CrawlOnline.Menu
@@ -14,7 +15,12 @@ namespace CrawlOnline.Menu
         private Action cancel;
         private Action refresh;
         private Action<int> friend;
-        private readonly DeferredMenuFocus deferredFocus = new DeferredMenuFocus();
+        private const string FocusProbeEnvironmentVariable = "CRAWL_ONLINE_MENU_FOCUS_PROBE";
+        private readonly bool focusProbeEnabled = string.Equals(
+            Environment.GetEnvironmentVariable(FocusProbeEnvironmentVariable), "1",
+            StringComparison.Ordinal);
+        private ManualLogSource log;
+        private bool focusProbeAnnounced;
 
         public void Initialise(Action selectedCallback, Action hostCallback, Action joinCallback,
             Action backCallback, Action inviteCallback, Action cancelCallback)
@@ -27,22 +33,48 @@ namespace CrawlOnline.Menu
             cancel = cancelCallback;
         }
 
+        public void InitialiseFocusProbe(ManualLogSource logSource)
+        {
+            log = logSource;
+            if (focusProbeEnabled && !focusProbeAnnounced)
+            {
+                focusProbeAnnounced = true;
+                log.LogWarning("Menu focus probe enabled; it records six sanitized menu snapshots per selection request.");
+            }
+        }
+
         public void InitialiseJoin(Action refreshCallback, Action<int> friendCallback)
         {
             refresh = refreshCallback;
             friend = friendCallback;
         }
 
-        public void ReapplyFocusNextFrame(Action focus)
+        public void ObserveFocus(string transition, Func<string> snapshot)
         {
-            if (focus == null) return;
-            StartCoroutine(ReapplyFocus(focus, deferredFocus.Request()));
+            if (!focusProbeEnabled || snapshot == null || log == null) return;
+            StartCoroutine(CaptureFocus(transition, snapshot));
         }
 
-        private IEnumerator ReapplyFocus(Action focus, int request)
+        private IEnumerator CaptureFocus(string transition, Func<string> snapshot)
         {
-            yield return null;
-            if (deferredFocus.IsCurrent(request)) focus();
+            var observation = new BoundedMenuFocusObservation();
+            observation.Begin();
+            int frame = 0;
+            while (observation.TryTakeSample())
+            {
+                try
+                {
+                    log.LogInfo("MENU_FOCUS transition=" + transition + " frame=" + frame + " " + snapshot());
+                }
+                catch (Exception exception)
+                {
+                    log.LogWarning("MENU_FOCUS transition=" + transition + " frame=" + frame +
+                        " observation failed: " + exception.GetType().Name + ".");
+                    yield break;
+                }
+                frame++;
+                yield return null;
+            }
         }
 
         // Invoked by the legitimate menu's existing message dispatch.
@@ -110,6 +142,7 @@ namespace CrawlOnline.Menu
             cancel = null;
             refresh = null;
             friend = null;
+            log = null;
         }
     }
 }
