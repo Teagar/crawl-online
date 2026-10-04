@@ -19,5 +19,6 @@
     <Compile Include="../../src/CrawlOnline/Online/FriendLobbyList.cs" Link="FriendLobbyList.cs" />
     <Compile Include="../../src/CrawlOnline/Menu/BoundedMenuFocusObservation.cs" Link="BoundedMenuFocusObservation.cs" />
     <Compile Include="../../src/CrawlOnline/Menu/MenuFocusContract.cs" Link="MenuFocusContract.cs" />
+    <Compile Include="../../src/CrawlOnline/Menu/NativeMenuVisualSelectionPlan.cs" Link="NativeMenuVisualSelectionPlan.cs" />
   </ItemGroup>
 </Project>
