@@ -251,6 +251,7 @@ namespace CrawlOnline
             onlineOperation = transition.Operation;
             if (joinOperation) session.CancelJoinOrLeave();
             else session.CancelHostOrLeave();
+            nativeMenu.CloseSessionMenu();
         }
 
         private void OnNativeJoinRefresh()
