@@ -18,5 +18,6 @@
     <Compile Include="../../src/CrawlOnline/Online/OnlineSessionAccessPolicy.cs" Link="OnlineSessionAccessPolicy.cs" />
     <Compile Include="../../src/CrawlOnline/Online/FriendLobbyList.cs" Link="FriendLobbyList.cs" />
     <Compile Include="../../src/CrawlOnline/Menu/BoundedMenuFocusObservation.cs" Link="BoundedMenuFocusObservation.cs" />
+    <Compile Include="../../src/CrawlOnline/Menu/NativeMenuSelectionPlan.cs" Link="NativeMenuSelectionPlan.cs" />
   </ItemGroup>
 </Project>
