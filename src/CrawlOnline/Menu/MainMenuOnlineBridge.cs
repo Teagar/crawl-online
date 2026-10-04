@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using UnityEngine;
 
 namespace CrawlOnline.Menu
@@ -13,6 +14,7 @@ namespace CrawlOnline.Menu
         private Action cancel;
         private Action refresh;
         private Action<int> friend;
+        private readonly DeferredMenuFocus deferredFocus = new DeferredMenuFocus();
 
         public void Initialise(Action selectedCallback, Action hostCallback, Action joinCallback,
             Action backCallback, Action inviteCallback, Action cancelCallback)
@@ -29,6 +31,18 @@ namespace CrawlOnline.Menu
         {
             refresh = refreshCallback;
             friend = friendCallback;
+        }
+
+        public void ReapplyFocusNextFrame(Action focus)
+        {
+            if (focus == null) return;
+            StartCoroutine(ReapplyFocus(focus, deferredFocus.Request()));
+        }
+
+        private IEnumerator ReapplyFocus(Action focus, int request)
+        {
+            yield return null;
+            if (deferredFocus.IsCurrent(request)) focus();
         }
 
         // Invoked by the legitimate menu's existing message dispatch.

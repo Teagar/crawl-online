@@ -151,7 +151,7 @@ namespace CrawlOnline.Menu
             int originalCount = items.Count;
             InvokeReflected(insert, menu, new[] { (object)plan.Index, itemData }, "InsertItem");
             int restoredSelection = selectedIndex >= plan.Index ? selectedIndex + 1 : selectedIndex;
-            InvokeReflected(setSelected, menu, new object[] { restoredSelection }, "SetSelectedItem");
+            SetSelectedItemAndReapply(menu, restoredSelection);
             IList installedItems = ReadRequiredField(menu.GetType(), menu, "m_items") as IList;
             if (installedItems == null)
                 throw new InvalidOperationException("Rendered menu items disappeared after insertion");
@@ -208,7 +208,7 @@ namespace CrawlOnline.Menu
                     "MsgCrawlOnlineInvite", owner);
                 InsertRenderedItem(installedMenu, 1, data[1], "CANCEL", "MsgCrawlOnlineCancel", owner);
                 SetMenuActive(installedMenu);
-                SetSelectedItem(installedMenu, 0);
+                SetSelectedItemAndReapply(installedMenu, 0);
                 log.LogInfo("Native Online submenu entered host waiting mode.");
             }
             catch (Exception exception)
@@ -311,7 +311,7 @@ namespace CrawlOnline.Menu
                 for (int i = 0; i < labels.Length; i++)
                     InsertRenderedItem(installedMenu, i, data[Math.Min(i, 1)], labels[i], messages[i], owner);
                 SetMenuActive(installedMenu);
-                SetSelectedItem(installedMenu, selectedIndex);
+                SetSelectedItemAndReapply(installedMenu, selectedIndex);
             }
             catch (Exception exception)
             {
@@ -399,7 +399,7 @@ namespace CrawlOnline.Menu
             int backIndex = simulationMode ? 1 : 2;
             InsertRenderedItem(menu, backIndex, data[1], "BACK", "MsgCrawlOnlineBack", owner);
             SetMenuActive(menu);
-            SetSelectedItem(menu, 0);
+            SetSelectedItemAndReapply(menu, 0);
 
             IList items = ReadRequiredField(menu.GetType(), menu, "m_items") as IList;
             string[] expected = simulationMode
@@ -421,7 +421,7 @@ namespace CrawlOnline.Menu
             if (includeOnline)
                 InsertRenderedItem(menu, 1, data[1], "ONLINE", NativeMenuContract.OnlineMessage, owner);
             SetMenuActive(menu);
-            SetSelectedItem(menu, includeOnline ? 1 : 0);
+            SetSelectedItemAndReapply(menu, includeOnline ? 1 : 0);
         }
 
         private void TryRestoreMainMenuWithOnlineFocus()
@@ -485,6 +485,16 @@ namespace CrawlOnline.Menu
                 null, new[] { typeof(int) }, null);
             if (method == null) throw new MissingMethodException(menu.GetType().FullName, "SetSelectedItem(Int32)");
             InvokeReflected(method, menu, new object[] { index }, "SetSelectedItem");
+        }
+
+        private void SetSelectedItemAndReapply(object menu, int index)
+        {
+            SetSelectedItem(menu, index);
+            if (bridge == null) return;
+            bridge.ReapplyFocusNextFrame(delegate
+            {
+                SetSelectedItem(menu, index);
+            });
         }
 
         private static void SetMenuActive(object menu)
