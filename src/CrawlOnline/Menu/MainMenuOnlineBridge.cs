@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using BepInEx.Logging;
 using UnityEngine;
 
@@ -21,6 +22,7 @@ namespace CrawlOnline.Menu
             StringComparison.Ordinal);
         private ManualLogSource log;
         private bool focusProbeAnnounced;
+        private readonly HashSet<string> observedFocusContracts = new HashSet<string>(StringComparer.Ordinal);
 
         public void Initialise(Action selectedCallback, Action hostCallback, Action joinCallback,
             Action backCallback, Action inviteCallback, Action cancelCallback)
@@ -53,6 +55,26 @@ namespace CrawlOnline.Menu
         {
             if (!focusProbeEnabled || snapshot == null || log == null) return;
             StartCoroutine(CaptureFocus(transition, snapshot));
+        }
+
+        public void ObserveFocusContract(Type menuType, Type itemType)
+        {
+            if (!focusProbeEnabled || log == null) return;
+            ObserveFocusContract(menuType);
+            ObserveFocusContract(itemType);
+        }
+
+        private void ObserveFocusContract(Type type)
+        {
+            if (type == null || !observedFocusContracts.Add(type.AssemblyQualifiedName ?? type.FullName)) return;
+            try
+            {
+                log.LogInfo("MENU_FOCUS_CONTRACT " + MenuFocusContract.Describe(type));
+            }
+            catch (Exception exception)
+            {
+                log.LogWarning("MENU_FOCUS_CONTRACT observation failed: " + exception.GetType().Name + ".");
+            }
         }
 
         private IEnumerator CaptureFocus(string transition, Func<string> snapshot)

@@ -492,26 +492,17 @@ namespace CrawlOnline.Menu
         private void SetSelectedItemAndObserve(object menu, int index, string transition)
         {
             if (bridge != null)
+            {
                 bridge.ObserveFocus(transition, delegate { return DescribeFocus(menu, index); });
+                bridge.ObserveFocusContract(menu.GetType(), GetMenuItemType(menu));
+            }
             SetSelectedItem(menu, index);
-            SynchronizeVisualSelection(menu, index);
         }
 
-        private static void SynchronizeVisualSelection(object menu, int selectedIndex)
+        private static Type GetMenuItemType(object menu)
         {
             IList items = ReadRequiredField(menu.GetType(), menu, "m_items") as IList;
-            if (items == null) throw new InvalidOperationException("Rendered menu items are unavailable");
-            NativeMenuSelectionPlan plan = NativeMenuSelectionPlan.Create(items.Count, selectedIndex);
-            for (int index = 0; index < plan.Count; index++)
-            {
-                object item = items[index];
-                MethodInfo method = item == null ? null : AccessTools.Method(item.GetType(),
-                    plan.IsSelected(index) ? "Select" : "Deselect", Type.EmptyTypes);
-                if (method == null)
-                    throw new MissingMethodException(item == null ? "MenuTextMenuItem" :
-                        item.GetType().FullName, plan.IsSelected(index) ? "Select()" : "Deselect()");
-                InvokeReflected(method, item, null, plan.IsSelected(index) ? "Select" : "Deselect");
-            }
+            return items == null || items.Count == 0 || items[0] == null ? null : items[0].GetType();
         }
 
         private static string DescribeFocus(object menu, int requestedIndex)
