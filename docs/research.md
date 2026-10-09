@@ -1,6 +1,8 @@
 # Reverse-engineering notes
 
-Research performed against the current Linux Steam installation. Decompiled files are kept outside the repository.
+Historical research began against a Linux Steam installation. Native Linux 1.0.3
+is now paused; current development and validation target only the legitimate
+Windows 1.0.1 depot. Decompiled files are kept outside the repository.
 
 ## Compatibility fingerprint
 
@@ -24,7 +26,8 @@ Assembly-CSharp-firstpass.dll SHA-256:
 32fd784ce5bdb3d11dfba721cc263d92f8b2700d5f57331d16236ee5b737612a
 ```
 
-These hashes identify the researched build; they are not game files and are safe to publish.
+These hashes identify researched builds; they are not game files and are safe to
+publish. Only the Windows 1.0.1 hash is accepted by the current candidate.
 
 ## Findings
 
@@ -54,8 +57,8 @@ These hashes identify the researched build; they are not game files and are safe
   metadata is ready and avoids missing-behaviour/serialization errors.
 - Both plugin assemblies target .NET Framework 3.5; targeting 4.5 references
   methods absent from the game's bundled `mscorlib`.
-- A Linux launch through Steam loaded the bootstrap and runtime, accepted the
-  assembly fingerprint, and produced zero missing-script errors.
+- The earlier Linux-native launch is historical evidence only and is not part of
+  the current support or release matrix.
 
 Windows packaging uses the matching x86 BepInEx 5.4.11 Doorstop build. The
 public Windows depot was exercised under Proton with Wine's native `winhttp`
@@ -64,9 +67,8 @@ assembly fingerprint, loaded the runtime, and produced zero missing-script
 errors. Human validation on native Windows hardware remains part of the card
 review and eventual release gate.
 
-The authoritative session protocol has a Linux host smoke test: Steam created a
-friends-only lobby, published the session metadata, reserved slot 0 for the
-owner, and left normally. The official Windows binary repeated creation and
-leave under Proton through the Windows BepInEx path. Cross-platform peer join
-cannot be claimed from a single Steam account and remains pending two-machine
-validation.
+The authoritative session protocol has historical Linux host evidence, now
+outside the active baseline. The official Windows 1.0.1 binary repeated creation
+and leave under Proton through the Windows BepInEx path. A real Windows 1.0.1
+peer join cannot be claimed from a single Steam account and remains pending
+two-machine validation.

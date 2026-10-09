@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 usage() { cat <<'TEXT'
-Usage: install-release-linux.sh <install|update|uninstall|diagnose> [--package FILE_OR_DIRECTORY] [--game-dir DIR] [--platform auto|linux|proton] [--allow-unknown-game]
+Usage: install-release-linux.sh <install|update|uninstall|diagnose> [--package FILE_OR_DIRECTORY] [--game-dir DIR] [--platform auto|proton]
 
 Download the Crawl Online release ZIP first and pass it with --package. The package
 contains only Crawl Online; BepInEx is downloaded from its upstream release with the
@@ -11,40 +11,37 @@ SHA-256 recorded in the package manifest. Uninstall removes only Crawl Online fi
 TEXT
 }
 command="${1:-}"; [[ -n "$command" ]] && shift || true
-package=""; game_dir="${CRAWL_GAME_DIR:-$HOME/.local/share/Steam/steamapps/common/Crawl}"; allow_unknown=false; requested_platform=auto
+package=""; game_dir="${CRAWL_GAME_DIR:-$HOME/.local/share/Steam/steamapps/common/Crawl}"; requested_platform=auto
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --package) package="${2:?missing package path}"; shift 2 ;;
     --game-dir) game_dir="${2:?missing game directory}"; shift 2 ;;
     --platform) requested_platform="${2:?missing platform}"; shift 2 ;;
-    --allow-unknown-game) allow_unknown=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
 done
 case "$command" in install|update|uninstall|diagnose) ;; *) usage >&2; exit 2;; esac
-case "$requested_platform" in auto|linux|proton) ;; *) printf 'Invalid --platform: %s\n' "$requested_platform" >&2; exit 2;; esac
+case "$requested_platform" in auto|proton) ;; *) printf 'Native Linux Crawl is paused; use the Windows 1.0.1 depot through Proton.\n' >&2; exit 2;; esac
 [[ -d "$game_dir" ]] || { printf 'Crawl directory was not found at %s. Use --game-dir.\n' "$game_dir" >&2; exit 1; }
 has_linux=false; has_proton=false
 [[ -x "$game_dir/Crawl.x86_64" ]] && has_linux=true
 [[ -f "$game_dir/Crawl.exe" ]] && has_proton=true
 if [[ "$requested_platform" == auto ]]; then
   if [[ "$has_linux" == true && "$has_proton" == true ]]; then
-    printf 'Both Linux and Windows Crawl executables were found at %s. Re-run with --platform linux or --platform proton.\n' "$game_dir" >&2; exit 1
-  elif [[ "$has_linux" == true ]]; then platform=linux
+    printf 'Both Linux and Windows Crawl executables were found at %s. Use a clean Windows 1.0.1 depot directory.\n' "$game_dir" >&2; exit 1
   elif [[ "$has_proton" == true ]]; then platform=proton
-  else printf 'Neither Crawl.x86_64 nor Crawl.exe was found at %s. Use --game-dir.\n' "$game_dir" >&2; exit 1
+  elif [[ "$has_linux" == true ]]; then
+    printf 'Native Linux Crawl is paused; install the Windows 1.0.1 depot through Steam/Proton.\n' >&2; exit 1
+  else printf 'Crawl.exe was not found at %s. Install the Windows 1.0.1 depot or use --game-dir.\n' "$game_dir" >&2; exit 1
   fi
 else
   platform="$requested_platform"
-  [[ "$platform" != linux || "$has_linux" == true ]] || { printf 'Crawl.x86_64 was not found at %s.\n' "$game_dir" >&2; exit 1; }
-  [[ "$platform" != proton || "$has_proton" == true ]] || { printf 'Crawl.exe was not found at %s.\n' "$game_dir" >&2; exit 1; }
+  [[ "$has_proton" == true ]] || { printf 'Crawl.exe was not found at %s.\n' "$game_dir" >&2; exit 1; }
 fi
-if [[ "$platform" == linux ]]; then loader_key=linux-x64; loader_marker="$game_dir/run_bepinex.sh"
-else loader_key=win-x86; loader_marker="$game_dir/winhttp.dll"
-fi
+loader_key=win-x86; loader_marker="$game_dir/winhttp.dll"
 loader_entrypoint_present() {
-  if [[ "$platform" == linux ]]; then [[ -x "$loader_marker" ]]; else [[ -f "$loader_marker" ]]; fi
+  [[ -f "$loader_marker" ]]
 }
 printf 'Detected Crawl platform: %s\n' "$platform"
 
@@ -123,28 +120,25 @@ else release_dir=""; fi
 manifest="$release_dir/CrawlOnline.release.json"
 [[ "$command" == uninstall || "$command" == diagnose ]] || [[ -f "$manifest" ]] || { printf 'A release package with CrawlOnline.release.json is required.\n' >&2; exit 2; }
 
-python3 - "$manifest" "$game_dir" "$allow_unknown" "$command" "$platform" <<'PY'
+python3 - "$manifest" "$game_dir" "$command" "$platform" <<'PY'
 import hashlib, json, os, sys
-manifest, game, allow, command, platform = sys.argv[1:]
-known={
- 'linux':'d6f169535cf2123568359550d75fe1a9924948e04d8d0beb2eed7eb187542f84',
- 'proton':'e93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e',
-}[platform]
-if platform == 'proton':
- exe=os.path.join(game,'Crawl.exe')
- with open(exe,'rb') as stream:
-  data=stream.read(64)
-  if len(data)<64 or data[:2]!=b'MZ': raise SystemExit('Crawl.exe is not a PE executable.')
-  pe=int.from_bytes(data[60:64],'little')
-  if pe>1024*1024: raise SystemExit('Crawl.exe has an invalid PE header offset.')
-  stream.seek(pe); signature=stream.read(6)
- if signature[:4]!=b'PE\0\0' or signature[4:6]!=b'\x4c\x01':
-  raise SystemExit('Crawl.exe is not the expected Windows x86 executable.')
+manifest, game, command, platform = sys.argv[1:]
+known='e93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e'
+exe=os.path.join(game,'Crawl.exe')
+with open(exe,'rb') as stream:
+ data=stream.read(64)
+ if len(data)<64 or data[:2]!=b'MZ': raise SystemExit('Crawl.exe is not a PE executable.')
+ pe=int.from_bytes(data[60:64],'little')
+ if pe>1024*1024: raise SystemExit('Crawl.exe has an invalid PE header offset.')
+ stream.seek(pe); signature=stream.read(6)
+if signature[:4]!=b'PE\0\0' or signature[4:6]!=b'\x4c\x01':
+ raise SystemExit('Crawl.exe is not the expected Windows x86 executable.')
 assembly=os.path.join(game, 'Crawl_Data', 'Managed', 'Assembly-CSharp.dll')
 if not os.path.isfile(assembly): raise SystemExit('Crawl Assembly-CSharp.dll is missing.')
 digest=hashlib.sha256(open(assembly,'rb').read()).hexdigest()
 print('Crawl Assembly-CSharp.dll SHA-256: '+digest)
-if digest != known and allow != 'true': raise SystemExit('Unsupported Crawl '+platform+' build. Re-run only after reviewing with --allow-unknown-game.')
+if digest != known and os.environ.get('CRAWL_ONLINE_TEST_ALLOW_UNKNOWN_GAME') != '1':
+ raise SystemExit('Unsupported Crawl Windows build. Version 1.0.1 is required.')
 if command in ('install', 'update'):
  m=json.load(open(manifest, encoding='utf-8'))
  if m.get('schemaVersion') != 1 or not isinstance(m.get('version'),str): raise SystemExit('Unsupported release manifest.')
@@ -172,8 +166,7 @@ import hashlib,json,os,sys
 state,plugin_dir,platform=sys.argv[1:]
 data=json.load(open(state,encoding='utf-8'))
 recorded=data.get('platform')
-if recorded is None and platform == 'linux': print('Legacy native Linux install state detected.')
-elif recorded != platform: raise SystemExit('Installed Crawl Online platform does not match the detected game depot.')
+if recorded != platform: raise SystemExit('Installed Crawl Online platform does not match the detected Windows 1.0.1 depot.')
 failed=False
 for name,expected in data.get('plugins',{}).items():
  path=os.path.join(plugin_dir,name)
@@ -193,7 +186,7 @@ PY
   [[ "$entrypoint_present" == true ]] && printf 'BepInEx %s entrypoint: present\n' "$loader_key" || printf 'BepInEx %s entrypoint: missing\n' "$loader_key"
   late_entrypoint=false; late_entrypoint_configured && late_entrypoint=true
   [[ "$late_entrypoint" == true ]] && printf 'BepInEx late Crawl entrypoint: configured\n' || printf 'BepInEx late Crawl entrypoint: MISSING OR INCORRECT\n'
-  [[ "$platform" != proton ]] || printf 'Required Steam launch option: WINEDLLOVERRIDES="winhttp=n,b" %%command%%\n'
+  printf 'Required Steam launch option: WINEDLLOVERRIDES="winhttp=n,b" %%command%%\n'
   if [[ "$installed" == true && ( "$core_present" != true || "$entrypoint_present" != true || "$late_entrypoint" != true ) ]]; then
     printf 'Installed Crawl Online has an incomplete or incompatible BepInEx loader.\n' >&2; exit 1
   fi
@@ -244,8 +237,4 @@ for name in CrawlOnline.dll CrawlOnline.Runtime.dll .crawl-online-install.json; 
   fi
 done
 activation_complete=true
-if [[ "$platform" == linux ]]; then
-  printf 'Crawl Online installed for native Linux. Steam launch option (once): ./run_bepinex.sh ./Crawl.x86_64 # %%command%%\n'
-else
-  printf 'Crawl Online installed for Crawl Windows x86 via Proton. Required Steam launch option: WINEDLLOVERRIDES="winhttp=n,b" %%command%%\n'
-fi
+printf 'Crawl Online installed for Crawl Windows 1.0.1 x86 via Proton. Required Steam launch option: WINEDLLOVERRIDES="winhttp=n,b" %%command%%\n'

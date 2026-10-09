@@ -74,7 +74,9 @@ for name, expected_hash in plugins.items():
 bepinex = manifest.get("bepInEx")
 if not isinstance(bepinex, dict) or bepinex.get("version") != "5.4.11.0":
     fail("BepInEx manifest mismatch")
-for platform in ("linux-x64", "win-x86"):
+if set(bepinex) != {"version", "win-x86"}:
+    fail("release must contain only the Windows x86 loader contract")
+for platform in ("win-x86",):
     entry = bepinex.get(platform)
     if not isinstance(entry, dict) or not entry.get("url") or len(entry.get("sha256", "")) != 64:
         fail("BepInEx " + platform + " manifest mismatch")

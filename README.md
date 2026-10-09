@@ -1,6 +1,6 @@
 # Crawl Online
 
-Experimental cross-platform online multiplayer mod for Powerhoof's **Crawl**.
+Experimental online multiplayer mod for Powerhoof's **Crawl**.
 
 The goal is real netplay: every participant owns, runs, and renders their own copy of the game. Video streaming is not part of the architecture.
 
@@ -20,7 +20,8 @@ No proprietary game binaries or decompiled source are committed to this reposito
 
 ## Planned player experience
 
-1. Install the same Crawl Online release on Windows or Linux.
+1. Install the same Crawl Online release against the Windows 1.0.1 depot, either
+   on native Windows or on Linux through Proton.
 2. Start Crawl normally through Steam.
 3. The host presses `F8` to create a private lobby.
 4. The host presses `F7` to open the Steam invitation dialog.
@@ -49,7 +50,11 @@ cross-machine peer validation.
 
 ## Install a release
 
-See the short [installation guide](docs/installation.md) for verified install, update, uninstall, and diagnostics on Windows x86, native Linux, and Crawl Windows x86 through Proton. Release packages contain only Crawl Online; the installer fetches the pinned BepInEx 5.4.11 loader directly from upstream and never includes Crawl or Steam files.
+See the short [installation guide](docs/installation.md) for verified install,
+update, uninstall, and diagnostics on Windows x86 and on Linux using the same
+Windows 1.0.1 depot through Proton. Native Linux 1.0.3 support is paused. Release
+packages contain only Crawl Online; the installer fetches the pinned x86 BepInEx
+5.4.11 loader directly from upstream and never includes Crawl or Steam files.
 
 ## Build
 
@@ -59,20 +64,20 @@ Requirements:
 - a legitimate Steam installation of Crawl
 - BepInEx 5.4.11 files staged under `artifacts/bepinex`
 
-Linux example:
+Linux/Proton example:
 
 ```bash
 export CRAWL_GAME_DIR="$HOME/.local/share/Steam/steamapps/common/Crawl"
-./scripts/fetch-bepinex.sh linux-x64
+./scripts/fetch-bepinex.sh win-x86
 dotnet build -c Release
 dotnet test -c Release
-./scripts/install-dev-linux.sh
+./scripts/install-release-linux.sh install --package /path/to/extracted-candidate --platform proton
 ```
 
 Set the game's Steam launch option to:
 
 ```text
-./run_bepinex.sh ./Crawl.x86_64 # %command%
+WINEDLLOVERRIDES="winhttp=n,b" %command%
 ```
 
 Windows PowerShell example:

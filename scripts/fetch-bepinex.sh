@@ -3,15 +3,15 @@ set -Eeuo pipefail
 
 readonly RELEASE_TAG="5.4.11"
 readonly VERSION="5.4.11.0"
-readonly TARGET="${1:-linux-x64}"
+readonly TARGET="${1:-win-x86}"
 readonly ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly DEST="$ROOT/artifacts/bepinex"
 
-case "$TARGET" in
-  linux-x64) asset="BepInEx_unix_${VERSION}.zip" ;;
-  win-x86) asset="BepInEx_x86_${VERSION}.zip" ;;
-  *) printf 'Target inválido: %s (use linux-x64 ou win-x86)\n' "$TARGET" >&2; exit 2 ;;
-esac
+[[ "$TARGET" == win-x86 ]] || {
+  printf 'Native Linux support is paused; only win-x86 for Crawl Windows 1.0.1 is available.\n' >&2
+  exit 2
+}
+asset="BepInEx_x86_${VERSION}.zip"
 
 mkdir -p "$DEST"
 gh release download "v$RELEASE_TAG" \

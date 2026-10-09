@@ -18,9 +18,9 @@ The host publishes lobby metadata for:
 
 Joining requires exact packet, session-protocol, mod-build, and game-assembly
 fingerprints before the hello is sent. This prevents two locally valid but
-unvalidated game builds from beginning gameplay. In particular, Windows 1.0.1
-and Linux-native 1.0.3 remain isolated until a real cross-build session
-establishes gameplay compatibility.
+unvalidated game builds from beginning gameplay. The current candidate accepts
+only the Windows 1.0.1 fingerprint. Native Linux 1.0.3 work is paused and cannot
+enter a lobby or receive a slot.
 
 The nonce invalidates packets retained from an earlier lobby. It is not a secret
 and is not treated as authentication by itself.
@@ -65,10 +65,9 @@ it.
 
 ## Runtime evidence
 
-A legitimate Linux Steam instance loaded the implementation, created a
-friends-only authoritative lobby, assigned the owner to slot 0, and left the
-lobby through the normal F8/F9 controls without a managed exception. The
-official 32-bit Windows build repeated the same create/slot-0/leave flow under
-Proton while BepInEx reported `System platform: Windows`. A true Linux-to-Windows
-peer handshake still requires two simultaneous Steam identities or machines and
-remains a human validation item.
+Historical Linux-native evidence remains research only. The official 32-bit
+Windows 1.0.1 build created a lobby, reserved slot 0, and left under Proton while
+BepInEx reported `System platform: Windows`. Proton is diagnostic evidence, not
+native Windows validation. A true Windows-1.0.1 peer handshake still requires two
+simultaneous legitimate Steam identities or machines and remains a human
+validation item.

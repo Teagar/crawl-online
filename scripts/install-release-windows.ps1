@@ -4,8 +4,7 @@ param(
     [ValidateSet('install', 'update', 'uninstall', 'diagnose')]
     [string]$Command,
     [string]$Package,
-    [string]$GameDir = "${env:ProgramFiles(x86)}\Steam\steamapps\common\Crawl",
-    [switch]$AllowUnknownGame
+    [string]$GameDir = "${env:ProgramFiles(x86)}\Steam\steamapps\common\Crawl"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -76,8 +75,8 @@ function Test-Game {
     Write-Host 'Crawl.exe architecture: Windows x86 (PE machine 0x014c)'
     $hash = Get-Sha256 $assembly
     Write-Host "Crawl Assembly-CSharp.dll SHA-256: $hash"
-    if ($hash -ne $KnownAssemblyHash -and -not $AllowUnknownGame) { throw 'Unsupported Crawl Windows build. Re-run only after reviewing with -AllowUnknownGame.' }
-    Write-Host "Crawl Windows build: $(if ($hash -eq $KnownAssemblyHash) { 'supported 1.0.1' } else { 'unknown (override enabled)' })"
+    if ($hash -ne $KnownAssemblyHash -and $env:CRAWL_ONLINE_TEST_ALLOW_UNKNOWN_GAME -ne '1') { throw 'Unsupported Crawl Windows build. Version 1.0.1 is required.' }
+    Write-Host "Crawl Windows build: $(if ($hash -eq $KnownAssemblyHash) { 'supported 1.0.1' } else { 'test fixture override' })"
 }
 function Get-Manifest([string]$ReleaseDir) {
     $manifestPath = Join-Path $ReleaseDir 'CrawlOnline.release.json'

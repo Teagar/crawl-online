@@ -8,8 +8,8 @@ public sealed class HeadlessSessionHarnessTests
 {
     private static readonly GameBuildFingerprint WindowsBuild =
         GameBuildFingerprint.Parse("e93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e");
-    private static readonly GameBuildFingerprint LinuxBuild =
-        GameBuildFingerprint.Parse("d6f169535cf2123568359550d75fe1a9924948e04d8d0beb2eed7eb187542f84");
+    private static readonly GameBuildFingerprint UnsupportedBuild =
+        GameBuildFingerprint.Parse("f93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e");
 
     [Fact]
     public void HostAndThreePeersAuthenticateAndExchangeRealGameplayPackets()
@@ -61,7 +61,7 @@ public sealed class HeadlessSessionHarnessTests
         Assert.Equal(SessionPacketResult.LocalRejected, full.LastPacketResult);
         Assert.False(full.IsAuthenticated);
 
-        HeadlessSessionPeer invalidBuild = harness.AddClient(6, LinuxBuild);
+        HeadlessSessionPeer invalidBuild = harness.AddClient(6, UnsupportedBuild);
         Assert.True(harness.Connect(invalidBuild));
         harness.Advance(10);
         Assert.Equal(SessionPacketResult.LocalRejected, invalidBuild.LastPacketResult);

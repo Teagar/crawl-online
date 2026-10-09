@@ -66,7 +66,8 @@ public sealed class BepInExFixture { }
         }
     }
     $manifest | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -LiteralPath (Join-Path $Package 'CrawlOnline.release.json')
-    $common = @('-Package', $Package, '-GameDir', $Game, '-AllowUnknownGame')
+    $env:CRAWL_ONLINE_TEST_ALLOW_UNKNOWN_GAME = '1'
+    $common = @('-Package', $Package, '-GameDir', $Game)
 
     Invoke-Installer 'install' $common | Out-Null
     $pluginDir = Join-Path $Game 'BepInEx\plugins\CrawlOnline'
@@ -93,8 +94,8 @@ public sealed class BepInExFixture { }
     Assert-True ([Convert]::ToBase64String([IO.File]::ReadAllBytes($installedRuntime)) -eq [Convert]::ToBase64String($beforeRuntime)) 'Rollback changed the runtime.'
     Assert-True ([Convert]::ToBase64String([IO.File]::ReadAllBytes($statePath)) -eq [Convert]::ToBase64String($beforeState)) 'Rollback changed install state.'
 
-    Invoke-Installer 'diagnose' @('-GameDir', $Game, '-AllowUnknownGame') | Out-Null
-    Invoke-Installer 'uninstall' @('-GameDir', $Game, '-AllowUnknownGame') | Out-Null
+    Invoke-Installer 'diagnose' @('-GameDir', $Game) | Out-Null
+    Invoke-Installer 'uninstall' @('-GameDir', $Game) | Out-Null
     Assert-True (-not (Test-Path -LiteralPath $pluginDir)) 'Uninstall left Crawl Online files behind.'
     Assert-True ((Get-Content -Raw -LiteralPath (Join-Path $Game 'BepInEx\plugins\OtherMod\keep.txt')) -eq 'keep') 'Uninstall changed another plugin.'
     Assert-True (Test-Path -LiteralPath (Join-Path $Game 'BepInEx\core\BepInEx.dll')) 'Uninstall removed BepInEx.'

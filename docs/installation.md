@@ -29,7 +29,7 @@ If Crawl is in a non-standard Steam library, add
 `-GameDir 'D:\SteamLibrary\steamapps\common\Crawl'`. Start Crawl normally through
 Steam afterwards.
 
-## Linux (native or Proton)
+## Linux (Windows 1.0.1 through Proton)
 
 From the extracted release folder:
 
@@ -38,30 +38,24 @@ chmod +x install-release-linux.sh
 ./install-release-linux.sh install --package .
 ```
 
-For a non-standard library add `--game-dir /path/to/Crawl`. The installer detects
-either native `Crawl.x86_64` or Windows x86 `Crawl.exe` running through Proton,
-validates the platform-specific assembly hash, and selects the matching pinned
-BepInEx package:
-
-- Native Linux uses `linux-x64` and prints the one-time Steam launch option
-  `./run_bepinex.sh ./Crawl.x86_64 # %command%`.
-- Proton uses the Windows `win-x86` Doorstop/BepInEx package. Set this Steam launch
-  option before starting Crawl through Steam:
+For a non-standard library add `--game-dir /path/to/Crawl`. The installer requires
+the Windows x86 `Crawl.exe` depot version 1.0.1, validates its exact gameplay
+assembly hash, and selects the pinned `win-x86` Doorstop/BepInEx package. Native
+Linux Crawl 1.0.3 is intentionally rejected while the 1.0.1 baseline is being
+completed. Set this Steam launch option before starting Crawl through Steam:
 
   ```text
   WINEDLLOVERRIDES="winhttp=n,b" %command%
   ```
 
-  The installer also configures BepInEx to start late at
-  `Assembly-CSharp.dll` / `SystemSteam.Awake`. Without the `winhttp` override the
-  mod does not load; using BepInEx's default early entrypoint can leave Crawl on
-  a black screen.
+The installer also configures BepInEx to start late at `Assembly-CSharp.dll` /
+`SystemSteam.Awake`. Without the `winhttp` override the mod does not load; using
+BepInEx's default early entrypoint can leave Crawl on a black screen.
 
 If both executables exist in one directory, auto-detection fails without changing
-files. Review the directory and explicitly pass `--platform linux` or
-`--platform proton`. An existing BepInEx installation must contain the matching
-entrypoint (`run_bepinex.sh` or `winhttp.dll`); the installer will not overlay an
-incompatible loader or disturb other plugins.
+files. Use a clean Windows 1.0.1 depot directory. An existing BepInEx installation
+must contain the matching `winhttp.dll` entrypoint; the installer will not overlay
+an incompatible loader or disturb other plugins.
 
 ## Updating, removing, and diagnosis
 
@@ -80,10 +74,9 @@ alone.
 ./install-release-linux.sh uninstall
 ```
 
-Linux diagnosis records and verifies whether the installation targets native
-Linux or Proton. Use the same `--game-dir` and, for an intentionally mixed
-directory, the same explicit `--platform` used during installation. It also
-verifies the required late BepInEx entrypoint and prints the Proton launch option.
+Linux diagnosis verifies that the installation targets the Windows 1.0.1 depot
+through Proton, checks the required late BepInEx entrypoint, and prints the Proton
+launch option.
 
 On Windows, `diagnose` reports the executable architecture, known game build,
 loader version, Doorstop presence, late entrypoint, plugin integrity, and log
@@ -107,7 +100,7 @@ target `.NET Framework 3.5`, and identify the CLR 2.0–3.5 runtime:
 
 ```bash
 dotnet build -c Release
-./scripts/package-release.sh <version> /path/BepInEx_unix_5.4.11.0.zip /path/BepInEx_x86_5.4.11.0.zip
+./scripts/package-release.sh <version> /path/BepInEx_x86_5.4.11.0.zip
 ```
 
 The compatibility gate can also be run directly on local build outputs with

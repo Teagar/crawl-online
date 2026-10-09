@@ -37,7 +37,7 @@ public sealed class GameBuildFingerprintTests
 
         Assert.True(GameBuildFingerprint.MatchesMetadata(expected, WindowsSha256.ToUpperInvariant()));
         Assert.False(GameBuildFingerprint.MatchesMetadata(expected,
-            "d6f169535cf2123568359550d75fe1a9924948e04d8d0beb2eed7eb187542f84"));
+            "f93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e"));
         Assert.False(GameBuildFingerprint.MatchesMetadata(expected, string.Empty));
         Assert.False(GameBuildFingerprint.MatchesMetadata(expected, "forged"));
         Assert.False(GameBuildFingerprint.MatchesMetadata(new GameBuildFingerprint(), WindowsSha256));

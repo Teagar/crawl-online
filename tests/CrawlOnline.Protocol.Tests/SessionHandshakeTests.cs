@@ -7,8 +7,8 @@ public sealed class SessionHandshakeTests
 {
     private static readonly GameBuildFingerprint WindowsBuild =
         GameBuildFingerprint.Parse("e93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e");
-    private static readonly GameBuildFingerprint LinuxBuild =
-        GameBuildFingerprint.Parse("d6f169535cf2123568359550d75fe1a9924948e04d8d0beb2eed7eb187542f84");
+    private static readonly GameBuildFingerprint UnsupportedBuild =
+        GameBuildFingerprint.Parse("f93e8fb49fd3c3ebe622d0f9f9557c1e4dd475c2a277be19e2c05cbb1f05f61e");
 
     [Fact]
     public void HandshakePacketsRoundTrip()
@@ -85,7 +85,7 @@ public sealed class SessionHandshakeTests
         Assert.Equal(HandshakeRejectReason.IncompatibleCapabilities, capabilities.Reason);
 
         SessionHello differentBuild = Hello(101, 500, 1);
-        differentBuild.GameBuild = LinuxBuild;
+        differentBuild.GameBuild = UnsupportedBuild;
         Assert.False(roster.TryAccept(101, differentBuild, out _, out SessionRejected gameBuild));
         Assert.Equal(HandshakeRejectReason.IncompatibleGameBuild, gameBuild.Reason);
 
@@ -168,7 +168,7 @@ public sealed class SessionHandshakeTests
             GameBuild = WindowsBuild
         };
         Assert.True(SessionRoster.ValidateAcceptance(accepted, 100, 500, 3, WindowsBuild));
-        Assert.False(SessionRoster.ValidateAcceptance(accepted, 100, 500, 3, LinuxBuild));
+        Assert.False(SessionRoster.ValidateAcceptance(accepted, 100, 500, 3, UnsupportedBuild));
         accepted.SessionNonce++;
         Assert.False(SessionRoster.ValidateAcceptance(accepted, 100, 500, 3, WindowsBuild));
     }
