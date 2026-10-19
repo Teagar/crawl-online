@@ -5,10 +5,10 @@ namespace CrawlOnline
     // Pure presentation rules shared by the Unity HUD and headless tests.
     public static class SessionHudPresentation
     {
-        public const float CompactWidth = 314f;
-        public const float CompactHeight = 42f;
-        public const float ExpandedWidth = 336f;
-        public const float ExpandedHeight = 188f;
+        public const float CompactWidth = 260f;
+        public const float CompactHeight = 36f;
+        public const float ExpandedWidth = 280f;
+        public const float ExpandedHeight = 58f;
 
         public static int ScaleForHeight(int screenHeight)
         {
@@ -44,17 +44,30 @@ namespace CrawlOnline
 
         public static string ContextLabel(SessionHudState state, string notice)
         {
-            if (!string.IsNullOrEmpty(notice)) return NativeText(notice);
+            if (!string.IsNullOrEmpty(notice))
+            {
+                string normalizedNotice = NativeText(notice);
+                if (normalizedNotice == "RETURN TO THE MAIN MENU BEFORE HOSTING OR JOINING ONLINE.")
+                    return "RETURN TO MENU FOR ONLINE";
+                return CompactText(normalizedNotice, 30);
+            }
             if (state == null) return string.Empty;
             if (state.Status == SessionHudStatus.Error || state.Status == SessionHudStatus.Offline)
-                return NativeText(state.Message);
-            return NativeText(state.RoleLabel + "  " + RosterLabel(state));
+                return CompactText(NativeText(state.Message), 30);
+            if (state.IsHost) return "HOST";
+            return state.LocalSlot < 0 ? "CLIENT / PENDING" : "CLIENT";
         }
 
         public static string NativeText(string value)
         {
             if (string.IsNullOrEmpty(value)) return string.Empty;
             return value.Replace("\u2026", "...").ToUpperInvariant();
+        }
+
+        private static string CompactText(string value, int maximumLength)
+        {
+            if (value.Length <= maximumLength) return value;
+            return value.Substring(0, maximumLength - 3).TrimEnd() + "...";
         }
     }
 }

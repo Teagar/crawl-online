@@ -83,8 +83,10 @@ public sealed class SessionHudStateTests
         Assert.Equal("PLAYERS  1 - - -   1/4", SessionHudPresentation.RosterLabel(state));
         Assert.Equal("AUTHENTICATING WITH HOST...",
             SessionHudPresentation.NativeText(state.Message));
-        Assert.Equal("CLIENT / PENDING  PLAYERS  1 - - -   1/4",
+        Assert.Equal("CLIENT / PENDING",
             SessionHudPresentation.ContextLabel(state, null));
+        Assert.Equal("RETURN TO MENU FOR ONLINE", SessionHudPresentation.ContextLabel(state,
+            "Return to the main menu before hosting or joining online."));
     }
 
     [Theory]

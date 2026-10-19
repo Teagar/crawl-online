@@ -1,13 +1,16 @@
 # Session HUD
 
 The native **ONLINE** main-menu entry owns configuration. Outside that menu the
-runtime draws only a small, original lower-left contextual Unity IMGUI strip
+runtime draws only a small, original upper-left contextual Unity IMGUI strip
 when a session is active or an error needs attention. It uses solid-colour
 primitives and discovers the legitimate installation's already-loaded native
 menu font from active `TextMesh` labels. The default Unity GUI font remains a
 fail-safe only while no native menu font is available. Its
-stepped frame, dark iron palette, warm trim, uppercase hierarchy, and integer
-scaling remain coherent with Crawl without copying game art or layout data.
+native uppercase hierarchy and integer scaling remain coherent with Crawl
+without copying game art or layout data. There is no panel, border, texture or
+other background: only game-font text with a small legibility shadow. The HUD
+contains ONLINE, connection state, player count and one short contextual line.
+`F5` adds role/slot and one message line instead of opening a diagnostics window.
 Crawl Online ships no Crawl textures, fonts, text, binaries, or decompiled
 source.
 
@@ -46,7 +49,7 @@ Automated tests exercise the identity-free state projection, including host
 roster, pending-client, and offline cases. A real authenticated Steam smoke
 can cover menu/offline/host/leave on one identity; it cannot validate an actual
 peer handshake. Capture 960x540 and 1920x1080 screenshots during human smoke
-to confirm that the lower-left panel does not obscure central menu actions and
+to confirm that the upper-left strip does not obscure central gameplay and
 that all text fits. Layout uses 1x scale at 540p/720p, 2x at 1080p/1440p and a
 bounded 3x scale at 4K so its visual weight remains consistent.
 Release validation remains a separate gate.

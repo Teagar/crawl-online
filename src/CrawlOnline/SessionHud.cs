@@ -7,8 +7,6 @@ namespace CrawlOnline
     internal sealed class SessionHud
     {
         private static readonly Color Shadow = new Color(0.01f, 0.01f, 0.015f, 0.82f);
-        private static readonly Color Panel = new Color(0.055f, 0.047f, 0.05f, 0.96f);
-        private static readonly Color PanelTop = new Color(0.11f, 0.085f, 0.075f, 0.98f);
         private static readonly Color Border = new Color(0.48f, 0.36f, 0.24f, 1f);
         private static readonly Color BorderLight = new Color(0.72f, 0.57f, 0.36f, 1f);
         private static readonly Color Text = new Color(0.88f, 0.82f, 0.70f, 1f);
@@ -69,7 +67,7 @@ namespace CrawlOnline
             float height = detailsVisible && !minimized
                 ? SessionHudPresentation.ExpandedHeight : SessionHudPresentation.CompactHeight;
             float x = Mathf.Max(10f, Mathf.Min(14f, logicalScreenWidth - width - 10f));
-            float y = Mathf.Max(10f, logicalScreenHeight - height - 14f);
+            float y = 14f;
 
             Matrix4x4 previousMatrix = GUI.matrix;
             Color previousColor = GUI.color;
@@ -79,7 +77,6 @@ namespace CrawlOnline
                 bool watermarkOnly = nativeMenuActive && state.IsSimulation;
                 if (!watermarkOnly)
                 {
-                    DrawFrame(new Rect(x, y, width, height));
                     if (detailsVisible && !minimized) DrawExpanded(state, x, y, width);
                     else DrawContext(state, x, y, width, hasNotice ? notice : null);
                 }
@@ -95,50 +92,29 @@ namespace CrawlOnline
 
         private void DrawContext(SessionHudState state, float x, float y, float width, string message)
         {
-            DrawSolid(new Rect(x + 5f, y + 5f, 4f, 28f), StatusColor(state.Status));
-            DrawLabel(new Rect(x + 17f, y + 8f, 98f, 24f),
-                SessionHudPresentation.StatusLabel(state.Status), titleStyle);
-            DrawLabel(new Rect(x + 119f, y + 8f, width - 131f, 24f),
+            DrawHeader(state, x, y, width);
+            DrawLabel(new Rect(x, y + 20f, width, 14f),
                 SessionHudPresentation.ContextLabel(state, message), smallStyle);
         }
 
         private void DrawExpanded(SessionHudState state, float x, float y, float width)
         {
-            DrawSolid(new Rect(x + 3f, y + 3f, width - 6f, 31f), PanelTop);
-            DrawSolid(new Rect(x + 9f, y + 8f, 4f, 20f), StatusColor(state.Status));
-            DrawLabel(new Rect(x + 20f, y + 7f, 175f, 23f), "CRAWL ONLINE", titleStyle);
-            DrawLabel(new Rect(x + width - 112f, y + 7f, 98f, 23f),
-                SessionHudPresentation.StatusLabel(state.Status), statusStyle);
-
-            DrawSolid(new Rect(x + 10f, y + 42f, width - 20f, 1f), Border);
-            DrawLabel(new Rect(x + 12f, y + 50f, 138f, 20f),
+            DrawHeader(state, x, y, width);
+            DrawLabel(new Rect(x, y + 20f, 128f, 16f),
                 SessionHudPresentation.NativeText(state.RoleLabel), roleStyle);
-            DrawLabel(new Rect(x + 154f, y + 50f, width - 166f, 20f),
+            DrawLabel(new Rect(x + 132f, y + 20f, width - 132f, 16f),
                 SessionHudPresentation.RosterLabel(state), roleStyle);
-            DrawLabel(new Rect(x + 12f, y + 76f, width - 24f, 39f),
+            DrawLabel(new Rect(x, y + 40f, width, 16f),
                 SessionHudPresentation.NativeText(state.Message), bodyStyle);
-
-            DrawSolid(new Rect(x + 10f, y + 122f, width - 20f, 1f), Border);
-            DrawLabel(new Rect(x + 12f, y + 130f, width - 24f, 18f),
-                state.IsSimulation
-                    ? "F7  DROP / RECONNECT     F9  STOP"
-                    : "F8  HOST     F7  INVITE     F9  LEAVE", smallStyle);
-            DrawLabel(new Rect(x + 12f, y + 153f, width - 24f, 18f),
-                "F5  DETAILS     F6  MINIMIZE", smallStyle);
         }
 
-        private static void DrawFrame(Rect rect)
+        private void DrawHeader(SessionHudState state, float x, float y, float width)
         {
-            DrawSolid(new Rect(rect.x + 4f, rect.y + 5f, rect.width, rect.height), Shadow);
-            DrawSolid(rect, Panel);
-            DrawOutline(rect, Border, 2f);
-            DrawOutline(new Rect(rect.x + 4f, rect.y + 4f, rect.width - 8f, rect.height - 8f), BorderLight, 1f);
-
-            // Stepped corner marks echo Crawl's block-built interface without copying art.
-            DrawSolid(new Rect(rect.x - 2f, rect.y + 8f, 4f, 17f), BorderLight);
-            DrawSolid(new Rect(rect.x + 8f, rect.y - 2f, 17f, 4f), BorderLight);
-            DrawSolid(new Rect(rect.x + rect.width - 2f, rect.y + rect.height - 25f, 4f, 17f), BorderLight);
-            DrawSolid(new Rect(rect.x + rect.width - 25f, rect.y + rect.height - 2f, 17f, 4f), BorderLight);
+            DrawLabel(new Rect(x, y, 72f, 16f), "ONLINE", titleStyle);
+            DrawLabel(new Rect(x + 76f, y, 102f, 16f),
+                SessionHudPresentation.StatusLabel(state.Status), statusStyle);
+            DrawLabel(new Rect(x + width - 43f, y, 43f, 16f),
+                state.ConnectedPlayerCount + "/4", statusStyle);
         }
 
         private void EnsureStyles(int scale)
@@ -235,13 +211,24 @@ namespace CrawlOnline
             return 0;
         }
 
-        private static void DrawLabel(Rect rect, string label, GUIStyle style)
+        private void DrawLabel(Rect rect, string label, GUIStyle style)
         {
+            float textScale = nativeFont != null && styledFont == nativeFont ? 2f : 1f;
+            Matrix4x4 previousMatrix = GUI.matrix;
+            if (textScale > 1f)
+            {
+                GUIUtility.ScaleAroundPivot(new Vector2(textScale, textScale),
+                    new Vector2(rect.x, rect.y));
+                rect.width /= textScale;
+                rect.height /= textScale;
+            }
             Color color = style.normal.textColor;
             SetStyleColor(style, Shadow);
-            GUI.Label(new Rect(rect.x + 1f, rect.y + 2f, rect.width, rect.height), label, style);
+            GUI.Label(new Rect(rect.x + 1f / textScale, rect.y + 1f / textScale,
+                rect.width, rect.height), label, style);
             SetStyleColor(style, color);
             GUI.Label(rect, label, style);
+            GUI.matrix = previousMatrix;
         }
 
         private static void SetStyleColor(GUIStyle style, Color color)
