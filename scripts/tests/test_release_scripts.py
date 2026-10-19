@@ -41,7 +41,8 @@ assert 'new object[] { Logger, gameBuildFingerprint }' in bootstrap_source
 assert '#if CRAWLONLINE_DEV_SIMULATION' in bootstrap_source and '#if CRAWLONLINE_DEV_SIMULATION' in simulation_source
 assert 'SteamMatchmaking.' not in simulation_source and 'SteamNetworking.' not in simulation_source
 assert 'GameApi.' not in simulation_source and 'SystemGame' not in simulation_source
-assert 'multiplayer gameplay end-to-end validated' in docs
+for limitation in ('Experimental build', 'complete campaign', 'have not been validated yet'):
+    assert limitation in docs
 for text in ('HeadlessSessionHarnessTests', '4/4 → 3/4 → 4/4', 'NAT traversal',
              'native Windows', 'second Steam', 'never calls'):
     assert text in simulation_docs

@@ -61,4 +61,42 @@ public sealed class SessionHudStateTests
         Assert.Equal(0, state.ConnectedPlayerCount);
         Assert.Equal(string.Empty, state.Message);
     }
+
+    [Theory]
+    [InlineData(540, 1)]
+    [InlineData(720, 1)]
+    [InlineData(1080, 2)]
+    [InlineData(1440, 2)]
+    [InlineData(2160, 3)]
+    public void HudScaleIsBoundedAcrossSupportedResolutions(int height, int expected)
+    {
+        Assert.Equal(expected, SessionHudPresentation.ScaleForHeight(height));
+    }
+
+    [Fact]
+    public void NativeHudProjectionUsesUppercaseAsciiAndIdentityFreeRoster()
+    {
+        var state = new SessionHudState(SessionHudStatus.Authenticating, false, -1,
+            new[] { true, false, false, false }, "Authenticating with host…");
+
+        Assert.Equal("LINKING", SessionHudPresentation.StatusLabel(state.Status));
+        Assert.Equal("PLAYERS  1 - - -   1/4", SessionHudPresentation.RosterLabel(state));
+        Assert.Equal("AUTHENTICATING WITH HOST...",
+            SessionHudPresentation.NativeText(state.Message));
+        Assert.Equal("CLIENT / PENDING  PLAYERS  1 - - -   1/4",
+            SessionHudPresentation.ContextLabel(state, null));
+    }
+
+    [Theory]
+    [InlineData(960, 540)]
+    [InlineData(1280, 720)]
+    [InlineData(1920, 1080)]
+    [InlineData(2560, 1440)]
+    [InlineData(3840, 2160)]
+    public void ExpandedHudFitsSupportedViewport(int width, int height)
+    {
+        int scale = SessionHudPresentation.ScaleForHeight(height);
+        Assert.True(width / (float)scale >= SessionHudPresentation.ExpandedWidth + 20f);
+        Assert.True(height / (float)scale >= SessionHudPresentation.ExpandedHeight + 20f);
+    }
 }

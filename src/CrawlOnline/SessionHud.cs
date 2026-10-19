@@ -6,11 +6,6 @@ namespace CrawlOnline
     // already loaded by the legitimate game. No Crawl art or copied layout ships here.
     internal sealed class SessionHud
     {
-        private const float ExpandedWidth = 320f;
-        private const float ExpandedHeight = 184f;
-        private const float ContextWidth = 300f;
-        private const float ContextHeight = 38f;
-
         private static readonly Color Shadow = new Color(0.01f, 0.01f, 0.015f, 0.82f);
         private static readonly Color Panel = new Color(0.055f, 0.047f, 0.05f, 0.96f);
         private static readonly Color PanelTop = new Color(0.11f, 0.085f, 0.075f, 0.98f);
@@ -37,6 +32,8 @@ namespace CrawlOnline
         private GUIStyle watermarkStyle;
         private GUIStyle watermarkCountStyle;
         private Font versionFont;
+        private Font nativeFont;
+        private int nextFontScanFrame;
 
         public void ToggleMinimized()
         {
@@ -56,17 +53,21 @@ namespace CrawlOnline
         public void Draw(SessionHudState state, bool nativeMenuActive, bool onlineOperationActive)
         {
             if (state == null) return;
+            int scale = SessionHudPresentation.ScaleForHeight(Screen.height);
+            EnsureStyles(scale);
+
+            // Prime the native font while the legitimate menu labels still exist,
+            // even though the passive session strip stays hidden over that menu.
             if (nativeMenuActive && !state.IsSimulation) return;
             bool hasNotice = !string.IsNullOrEmpty(notice);
             if (state.Status == SessionHudStatus.Offline && !hasNotice && !onlineOperationActive) return;
 
-            int scale = Mathf.Clamp(Mathf.FloorToInt(Screen.height / 540f), 1, 2);
-            EnsureStyles(scale);
-
             float logicalScreenHeight = Screen.height / (float)scale;
             float logicalScreenWidth = Screen.width / (float)scale;
-            float width = detailsVisible && !minimized ? ExpandedWidth : ContextWidth;
-            float height = detailsVisible && !minimized ? ExpandedHeight : ContextHeight;
+            float width = detailsVisible && !minimized
+                ? SessionHudPresentation.ExpandedWidth : SessionHudPresentation.CompactWidth;
+            float height = detailsVisible && !minimized
+                ? SessionHudPresentation.ExpandedHeight : SessionHudPresentation.CompactHeight;
             float x = Mathf.Max(10f, Mathf.Min(14f, logicalScreenWidth - width - 10f));
             float y = Mathf.Max(10f, logicalScreenHeight - height - 14f);
 
@@ -95,33 +96,34 @@ namespace CrawlOnline
         private void DrawContext(SessionHudState state, float x, float y, float width, string message)
         {
             DrawSolid(new Rect(x + 5f, y + 5f, 4f, 28f), StatusColor(state.Status));
-            GUI.Label(new Rect(x + 17f, y + 8f, 92f, 22f), StatusLabel(state.Status), titleStyle);
-            string context = message;
-            if (string.IsNullOrEmpty(context))
-                context = state.Status == SessionHudStatus.Error || state.Status == SessionHudStatus.Offline
-                    ? state.Message :
-                    state.RoleLabel + "  " + RosterLabel(state);
-            GUI.Label(new Rect(x + 113f, y + 8f, width - 125f, 22f), context, smallStyle);
+            DrawLabel(new Rect(x + 17f, y + 8f, 98f, 24f),
+                SessionHudPresentation.StatusLabel(state.Status), titleStyle);
+            DrawLabel(new Rect(x + 119f, y + 8f, width - 131f, 24f),
+                SessionHudPresentation.ContextLabel(state, message), smallStyle);
         }
 
         private void DrawExpanded(SessionHudState state, float x, float y, float width)
         {
             DrawSolid(new Rect(x + 3f, y + 3f, width - 6f, 31f), PanelTop);
             DrawSolid(new Rect(x + 9f, y + 8f, 4f, 20f), StatusColor(state.Status));
-            GUI.Label(new Rect(x + 20f, y + 7f, 175f, 23f), "CRAWL ONLINE", titleStyle);
-            GUI.Label(new Rect(x + width - 102f, y + 7f, 88f, 23f), StatusLabel(state.Status), statusStyle);
+            DrawLabel(new Rect(x + 20f, y + 7f, 175f, 23f), "CRAWL ONLINE", titleStyle);
+            DrawLabel(new Rect(x + width - 112f, y + 7f, 98f, 23f),
+                SessionHudPresentation.StatusLabel(state.Status), statusStyle);
 
             DrawSolid(new Rect(x + 10f, y + 42f, width - 20f, 1f), Border);
-            GUI.Label(new Rect(x + 12f, y + 50f, 138f, 20f), state.RoleLabel.ToUpperInvariant(), roleStyle);
-            GUI.Label(new Rect(x + 154f, y + 50f, width - 166f, 20f), RosterLabel(state), roleStyle);
-            GUI.Label(new Rect(x + 12f, y + 76f, width - 24f, 39f), state.Message, bodyStyle);
+            DrawLabel(new Rect(x + 12f, y + 50f, 138f, 20f),
+                SessionHudPresentation.NativeText(state.RoleLabel), roleStyle);
+            DrawLabel(new Rect(x + 154f, y + 50f, width - 166f, 20f),
+                SessionHudPresentation.RosterLabel(state), roleStyle);
+            DrawLabel(new Rect(x + 12f, y + 76f, width - 24f, 39f),
+                SessionHudPresentation.NativeText(state.Message), bodyStyle);
 
             DrawSolid(new Rect(x + 10f, y + 122f, width - 20f, 1f), Border);
-            GUI.Label(new Rect(x + 12f, y + 130f, width - 24f, 18f),
+            DrawLabel(new Rect(x + 12f, y + 130f, width - 24f, 18f),
                 state.IsSimulation
                     ? "F7  DROP / RECONNECT     F9  STOP"
                     : "F8  HOST     F7  INVITE     F9  LEAVE", smallStyle);
-            GUI.Label(new Rect(x + 12f, y + 153f, width - 24f, 18f),
+            DrawLabel(new Rect(x + 12f, y + 153f, width - 24f, 18f),
                 "F5  DETAILS     F6  MINIMIZE", smallStyle);
         }
 
@@ -141,7 +143,9 @@ namespace CrawlOnline
 
         private void EnsureStyles(int scale)
         {
-            Font font = GUI.skin != null ? GUI.skin.font : null;
+            Font fallbackFont = GUI.skin != null ? GUI.skin.font : null;
+            Font font = FindNativeInterfaceFont();
+            if (font == null) font = fallbackFont;
             Font detectedVersionFont = FindVersionFont();
             if (detectedVersionFont == null) detectedVersionFont = font;
             if (styledScale == scale && styledFont == font && versionFont == detectedVersionFont &&
@@ -150,12 +154,12 @@ namespace CrawlOnline
             styledScale = scale;
             styledFont = font;
             versionFont = detectedVersionFont;
-            titleStyle = CreateStyle(font, Text, 14, FontStyle.Bold, TextAnchor.MiddleLeft);
-            statusStyle = CreateStyle(font, Text, 11, FontStyle.Bold, TextAnchor.MiddleRight);
-            roleStyle = CreateStyle(font, Text, 11, FontStyle.Bold, TextAnchor.MiddleLeft);
+            titleStyle = CreateStyle(font, Text, 15, FontStyle.Normal, TextAnchor.MiddleLeft);
+            statusStyle = CreateStyle(font, Text, 12, FontStyle.Normal, TextAnchor.MiddleRight);
+            roleStyle = CreateStyle(font, Text, 12, FontStyle.Normal, TextAnchor.MiddleLeft);
             bodyStyle = CreateStyle(font, MutedText, 11, FontStyle.Normal, TextAnchor.UpperLeft);
             bodyStyle.wordWrap = true;
-            smallStyle = CreateStyle(font, MutedText, 10, FontStyle.Bold, TextAnchor.MiddleLeft);
+            smallStyle = CreateStyle(font, MutedText, 10, FontStyle.Normal, TextAnchor.MiddleLeft);
             watermarkStyle = CreateStyle(versionFont, VersionText, 36, FontStyle.Normal,
                 TextAnchor.LowerLeft);
             watermarkCountStyle = CreateStyle(versionFont, VersionText, 72, FontStyle.Normal,
@@ -196,6 +200,56 @@ namespace CrawlOnline
                     text.font != null) return text.font;
             }
             return null;
+        }
+
+        private Font FindNativeInterfaceFont()
+        {
+            if (nativeFont != null) return nativeFont;
+            if (Time.frameCount < nextFontScanFrame) return null;
+            nextFontScanFrame = Time.frameCount + 30;
+
+            UnityEngine.Object[] textMeshes = Resources.FindObjectsOfTypeAll(typeof(TextMesh));
+            Font best = null;
+            int bestScore = 0;
+            for (int i = 0; i < textMeshes.Length; i++)
+            {
+                TextMesh text = textMeshes[i] as TextMesh;
+                if (text == null || text.font == null || string.IsNullOrEmpty(text.text)) continue;
+                string label = text.text.Trim().ToUpperInvariant();
+                int score = InterfaceFontScore(label);
+                if (text.gameObject != null && text.gameObject.activeInHierarchy) score += 20;
+                if (score <= bestScore) continue;
+                best = text.font;
+                bestScore = score;
+            }
+            if (best != null) nativeFont = best;
+            return nativeFont;
+        }
+
+        private static int InterfaceFontScore(string label)
+        {
+            if (label == "ONLINE") return 140;
+            if (label == "START GAME" || label == "THE VAULT") return 120;
+            if (label == "HOST GAME" || label == "JOIN FRIEND" || label == "BACK") return 110;
+            if (label == "OPTIONS" || label == "EXIT" || label == "QUIT") return 90;
+            return 0;
+        }
+
+        private static void DrawLabel(Rect rect, string label, GUIStyle style)
+        {
+            Color color = style.normal.textColor;
+            SetStyleColor(style, Shadow);
+            GUI.Label(new Rect(rect.x + 1f, rect.y + 2f, rect.width, rect.height), label, style);
+            SetStyleColor(style, color);
+            GUI.Label(rect, label, style);
+        }
+
+        private static void SetStyleColor(GUIStyle style, Color color)
+        {
+            style.normal.textColor = color;
+            style.hover.textColor = color;
+            style.active.textColor = color;
+            style.focused.textColor = color;
         }
 
         private static GUIStyle CreateStyle(Font font, Color color, int size, FontStyle fontStyle, TextAnchor alignment)
@@ -243,28 +297,5 @@ namespace CrawlOnline
             }
         }
 
-        private static string StatusLabel(SessionHudStatus status)
-        {
-            switch (status)
-            {
-                case SessionHudStatus.CreatingLobby: return "CREATING";
-                case SessionHudStatus.WaitingForPeers: return "WAITING";
-                case SessionHudStatus.Authenticating: return "LINKING";
-                case SessionHudStatus.Connected: return "CONNECTED";
-                case SessionHudStatus.Error: return "ERROR";
-                default: return "OFFLINE";
-            }
-        }
-
-        private static string RosterLabel(SessionHudState state)
-        {
-            string text = "PLAYERS  ";
-            for (int slot = 0; slot < 4; slot++)
-            {
-                if (slot > 0) text += " ";
-                text += state.IsSlotConnected(slot) ? (slot + 1).ToString() : "-";
-            }
-            return text + "   " + state.ConnectedPlayerCount + "/4";
-        }
     }
 }
