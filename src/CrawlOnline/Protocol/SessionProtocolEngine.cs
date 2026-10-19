@@ -45,6 +45,9 @@ namespace CrawlOnline.Protocol
             new Dictionary<ulong, uint>();
         private readonly Dictionary<ulong, SnapshotHistory> peerSnapshotHistory =
             new Dictionary<ulong, SnapshotHistory>();
+        private readonly Dictionary<ulong, uint> peerPendingPlanSequences = new Dictionary<ulong, uint>();
+        private readonly Dictionary<ulong, uint> peerPendingPlanGenerations = new Dictionary<ulong, uint>();
+        private readonly Dictionary<ulong, uint> peerDeliveredPlanGenerations = new Dictionary<ulong, uint>();
         private SessionRoster roster;
         private SequenceWindow receiveWindow;
         private ulong localId;
@@ -73,6 +76,10 @@ namespace CrawlOnline.Protocol
         }
 
         public bool IsActive { get { return sessionNonce != 0; } }
+        public bool HasPendingMapPlanAcknowledgements
+        {
+            get { return IsHost && peerPendingPlanSequences.Count != 0; }
+        }
         public bool IsHost { get { return IsActive && localId == hostId; } }
         public bool IsAuthenticated { get { return IsHost || localSlot != byte.MaxValue; } }
         public ulong SessionNonce { get { return sessionNonce; } }
@@ -119,6 +126,7 @@ namespace CrawlOnline.Protocol
         public bool ReconnectClient()
         {
             if (!IsActive || IsHost || localId == 0 || hostId == 0) return false;
+            if (receiveWindow != null) receiveWindow.ResetSnapshots();
             localAttempt = Next(localAttempt);
             return transport.Send(hostId, PacketCodec.EncodeHello(new SessionHello
             {
@@ -183,11 +191,22 @@ namespace CrawlOnline.Protocol
             snapshotSequence = Next(snapshotSequence);
             snapshot.SessionNonce = sessionNonce;
             snapshot.Sequence = snapshotSequence;
-            byte[] packet = AuthoritativeCodec.EncodeSnapshot(snapshot);
             ulong[] peers = roster.GetConnectedPeerIds();
             bool queued = true;
             for (int i = 0; i < peers.Length; i++)
             {
+                if (peerPendingPlanSequences.ContainsKey(peers[i])) continue;
+                bool hasMapPlan = snapshot.GameStartGeneration != 0 &&
+                    ((snapshot.RoomArchetypeHashes != null && snapshot.RoomArchetypeHashes.Length != 0) ||
+                     (snapshot.SpecialRoomArchetypeHashes != null && snapshot.SpecialRoomArchetypeHashes.Length != 0) ||
+                     (snapshot.RoomCollisionDecisions != null && snapshot.RoomCollisionDecisions.Length != 0) ||
+                     (snapshot.RoomSelectionDecisions != null && snapshot.RoomSelectionDecisions.Length != 0));
+                uint deliveredGeneration;
+                bool needsMapPlan = hasMapPlan &&
+                    (!peerDeliveredPlanGenerations.TryGetValue(peers[i], out deliveredGeneration) ||
+                     deliveredGeneration != snapshot.GameStartGeneration);
+                WorldSnapshot outgoing = needsMapPlan ? snapshot : WithoutMapPlan(snapshot);
+                byte[] packet = AuthoritativeCodec.EncodeSnapshot(outgoing);
                 SnapshotHistory history;
                 if (!peerSnapshotHistory.TryGetValue(peers[i], out history))
                 {
@@ -195,7 +214,14 @@ namespace CrawlOnline.Protocol
                     peerSnapshotHistory.Add(peers[i], history);
                 }
                 history.Add(snapshot);
-                queued &= transport.Send(peers[i], packet, SessionDelivery.Unreliable);
+                SessionDelivery delivery = needsMapPlan ? SessionDelivery.Reliable : SessionDelivery.Unreliable;
+                bool sent = transport.Send(peers[i], packet, delivery);
+                queued &= sent;
+                if (sent && needsMapPlan)
+                {
+                    peerPendingPlanSequences[peers[i]] = snapshot.Sequence;
+                    peerPendingPlanGenerations[peers[i]] = snapshot.GameStartGeneration;
+                }
             }
             return queued;
         }
@@ -232,6 +258,7 @@ namespace CrawlOnline.Protocol
                 SessionRejected rejected;
                 if (roster.TryAccept(senderId, hello, out accepted, out rejected))
                 {
+                    if (receiveWindow != null) receiveWindow.ResetInput(accepted.AssignedSlot);
                     if (!transport.Send(senderId, PacketCodec.EncodeAccepted(accepted),
                         SessionDelivery.Reliable)) return SessionPacketResult.Rejected;
                     return SessionPacketResult.HandshakeAccepted;
@@ -316,6 +343,17 @@ namespace CrawlOnline.Protocol
                     SnapshotHistory history;
                     if (peerSnapshotHistory.TryGetValue(senderId, out history))
                         history.Acknowledge(acknowledgement.Sequence);
+                    uint pendingSequence;
+                    if (peerPendingPlanSequences.TryGetValue(senderId, out pendingSequence) &&
+                        (acknowledgement.Sequence == pendingSequence ||
+                         SequenceWindow.IsNewer(acknowledgement.Sequence, pendingSequence)))
+                    {
+                        uint generation;
+                        if (peerPendingPlanGenerations.TryGetValue(senderId, out generation))
+                            peerDeliveredPlanGenerations[senderId] = generation;
+                        peerPendingPlanSequences.Remove(senderId);
+                        peerPendingPlanGenerations.Remove(senderId);
+                    }
                 }
                 return SessionPacketResult.AcknowledgementAccepted;
             }
@@ -336,6 +374,9 @@ namespace CrawlOnline.Protocol
             if (roster != null) roster.Remove(peerId);
             peerAcknowledgements.Remove(peerId);
             peerSnapshotHistory.Remove(peerId);
+            peerPendingPlanSequences.Remove(peerId);
+            peerPendingPlanGenerations.Remove(peerId);
+            peerDeliveredPlanGenerations.Remove(peerId);
         }
 
         public void Reset()
@@ -353,6 +394,41 @@ namespace CrawlOnline.Protocol
             localSlot = byte.MaxValue;
             peerAcknowledgements.Clear();
             peerSnapshotHistory.Clear();
+            peerPendingPlanSequences.Clear();
+            peerPendingPlanGenerations.Clear();
+            peerDeliveredPlanGenerations.Clear();
+        }
+
+        private static WorldSnapshot WithoutMapPlan(WorldSnapshot snapshot)
+        {
+            return new WorldSnapshot
+            {
+                SessionNonce = snapshot.SessionNonce,
+                Sequence = snapshot.Sequence,
+                HostTick = snapshot.HostTick,
+                LastInputSequences = snapshot.LastInputSequences,
+                Flags = snapshot.Flags,
+                Level = snapshot.Level,
+                RoomX = snapshot.RoomX,
+                RoomY = snapshot.RoomY,
+                RoomDepth = snapshot.RoomDepth,
+                RoomIndex = snapshot.RoomIndex,
+                TransitionGeneration = snapshot.TransitionGeneration,
+                RandomStateHash = snapshot.RandomStateHash,
+                RandomStateWords = snapshot.RandomStateWords,
+                GameStartGeneration = snapshot.GameStartGeneration,
+                GameStartRandomStateWords = snapshot.GameStartRandomStateWords,
+                RoomContentGeneration = snapshot.RoomContentGeneration,
+                RoomContentRoomIndex = snapshot.RoomContentRoomIndex,
+                RoomContentRandomStateWords = snapshot.RoomContentRandomStateWords,
+                RoomArchetypeHashes = new ulong[0],
+                SpecialRoomArchetypeHashes = new ulong[0],
+                RoomCollisionDecisions = new RoomCollisionDecision[0],
+                RoomSelectionDecisions = new RoomSelectionDecision[0],
+                RoomLayout = new RoomLayoutState[0],
+                Players = snapshot.Players,
+                Enemies = snapshot.Enemies
+            };
         }
 
         private static uint Next(uint sequence)

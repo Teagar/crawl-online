@@ -6,6 +6,7 @@ using CrawlOnline.Diagnostics;
 using CrawlOnline.Menu;
 using CrawlOnline.Online;
 using CrawlOnline.Protocol;
+using HarmonyLib;
 #if CRAWLONLINE_DEV_SIMULATION
 using CrawlOnline.Development;
 #endif
@@ -26,6 +27,10 @@ namespace CrawlOnline
         private OnlineFlowStateMachine onlineFlow;
         private long onlineOperation;
         private ulong[] friendLobbies = new ulong[0];
+        private ulong pendingLaunchLobby;
+        private Harmony pendingLaunchGuardHarmony;
+        private bool suppressLocalStartForPendingLaunch;
+        private static CrawlOnlineRuntime activePendingLaunchRuntime;
 #if CRAWLONLINE_DEV_SIMULATION
         private bool simulationMode;
 #endif
@@ -71,8 +76,14 @@ namespace CrawlOnline
             onlineFlow = new OnlineFlowStateMachine();
             nativeMenu = new NativeMainMenuIntegration(log, OnNativeOnlineSelected,
                 OnNativeHostSelected, OnNativeJoinSelected, OnNativeOnlineBack,
-                OnNativeInviteSelected, OnNativeCancelSelected, OnNativeJoinRefresh,
+                OnNativeInviteSelected, OnNativeMenuCancelSelected, OnNativeJoinRefresh,
                 OnNativeFriendSelected, enableLocalSimulation);
+            if (!enableLocalSimulation && SteamLobbyLaunchRequest.TryParse(
+                Environment.GetCommandLineArgs(), out pendingLaunchLobby))
+            {
+                InstallPendingLaunchStartGuard();
+                log.LogInfo("Steam launch requested a lobby join; waiting for the active main menu.");
+            }
             log.LogInfo(enableLocalSimulation
                 ? "SIMULATION ready: F8 start, F7 drop/reconnect, F9 stop; Steam lobby APIs disabled."
                 : "Ready: F8 host, F7 invite, F9 leave, F5 help, F6 HUD");
@@ -82,6 +93,7 @@ namespace CrawlOnline
         {
             if (menuProbe != null) menuProbe.Tick();
             if (nativeMenu != null) nativeMenu.Tick();
+            TryProcessPendingLaunchLobby();
 #if CRAWLONLINE_DEV_SIMULATION
             if (simulationMode && session.InLobby &&
                 (nativeMenu == null || !nativeMenu.IsActiveMainMenu))
@@ -114,8 +126,13 @@ namespace CrawlOnline
             }
             else if (Input.GetKeyDown(KeyCode.F9))
             {
+                log.LogInfo("Explicit F9 leave requested.");
                 if (onlineFlow.State == OnlineFlowState.CreatingLobby ||
                     onlineFlow.State == OnlineFlowState.WaitingForPlayers ||
+                    onlineFlow.State == OnlineFlowState.DiscoveringFriend ||
+                    onlineFlow.State == OnlineFlowState.JoiningLobby ||
+                    onlineFlow.State == OnlineFlowState.Authenticating ||
+                    onlineFlow.State == OnlineFlowState.Connected ||
                     onlineFlow.State == OnlineFlowState.RecoverableError)
                     OnNativeCancelSelected();
                 else
@@ -126,8 +143,22 @@ namespace CrawlOnline
             UpdateOnlineFlow();
         }
 
+        private void TryProcessPendingLaunchLobby()
+        {
+            if (pendingLaunchLobby == 0 || nativeMenu == null ||
+                !nativeMenu.IsActiveMainMenu ||
+                (onlineFlow.State != OnlineFlowState.Offline &&
+                 onlineFlow.State != OnlineFlowState.OnlineMenu)) return;
+            ulong lobbyId = pendingLaunchLobby;
+            pendingLaunchLobby = 0;
+            log.LogInfo("Processing the pending Steam launch lobby from the active main menu.");
+            OnLobbyJoinRequested(lobbyId);
+        }
+
         public void Shutdown()
         {
+            log.LogInfo("Crawl Online runtime shutdown requested by Unity.");
+            ReleasePendingLaunchStartGuard();
             if (synchronizer != null)
             {
                 synchronizer.Dispose();
@@ -246,12 +277,63 @@ namespace CrawlOnline
                 if (joinOperation) session.CancelJoinOrLeave();
                 else session.CancelHostOrLeave();
                 nativeMenu.CloseSessionMenu();
+                if (joinOperation) ReleasePendingLaunchStartGuard();
                 return;
             }
             onlineOperation = transition.Operation;
             if (joinOperation) session.CancelJoinOrLeave();
             else session.CancelHostOrLeave();
             nativeMenu.CloseSessionMenu();
+            if (joinOperation) ReleasePendingLaunchStartGuard();
+        }
+
+        private void OnNativeMenuCancelSelected()
+        {
+            log.LogInfo("Native Online menu leave selected.");
+            OnNativeCancelSelected();
+        }
+
+        private void InstallPendingLaunchStartGuard()
+        {
+            try
+            {
+                Type menuMain = AccessTools.TypeByName("MenuMain");
+                System.Reflection.MethodInfo start = menuMain == null ? null :
+                    AccessTools.Method(menuMain, NativeMenuContract.StartMessage);
+                if (start == null)
+                    throw new MissingMethodException("MenuMain", NativeMenuContract.StartMessage);
+                pendingLaunchGuardHarmony = new Harmony("crawl.online.pending-launch-start");
+                activePendingLaunchRuntime = this;
+                suppressLocalStartForPendingLaunch = true;
+                pendingLaunchGuardHarmony.Patch(start,
+                    new HarmonyMethod(typeof(CrawlOnlineRuntime), "PendingLaunchStartPrefix"), null);
+            }
+            catch (Exception exception)
+            {
+                suppressLocalStartForPendingLaunch = false;
+                activePendingLaunchRuntime = null;
+                if (pendingLaunchGuardHarmony != null) pendingLaunchGuardHarmony.UnpatchSelf();
+                pendingLaunchGuardHarmony = null;
+                log.LogWarning("Pending Steam launch could not guard local START GAME safely: " +
+                    exception.GetType().Name + ".");
+            }
+        }
+
+        private void ReleasePendingLaunchStartGuard()
+        {
+            suppressLocalStartForPendingLaunch = false;
+            if (ReferenceEquals(activePendingLaunchRuntime, this)) activePendingLaunchRuntime = null;
+            if (pendingLaunchGuardHarmony != null)
+            {
+                pendingLaunchGuardHarmony.UnpatchSelf();
+                pendingLaunchGuardHarmony = null;
+            }
+        }
+
+        private static bool PendingLaunchStartPrefix()
+        {
+            CrawlOnlineRuntime runtime = activePendingLaunchRuntime;
+            return runtime == null || !runtime.suppressLocalStartForPendingLaunch;
         }
 
         private void OnNativeJoinRefresh()

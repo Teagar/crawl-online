@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Collections.Generic;
 using BepInEx.Logging;
@@ -13,7 +14,7 @@ namespace CrawlOnline
     {
         private const int Channel = 7;
         private const int MaxPacketSize = 64 * 1024;
-        private const string SessionProtocolVersion = "5";
+        private const string SessionProtocolVersion = "15";
         private const string LobbyPacketProtocolKey = "crawl-online-protocol";
         private const string LobbySessionProtocolKey = "crawl-online-session-protocol";
         private const string LobbyBuildKey = "crawl-online-build";
@@ -84,6 +85,11 @@ namespace CrawlOnline
         public ulong SessionNonce
         {
             get { return protocol.SessionNonce; }
+        }
+
+        public bool HasPendingMapPlanAcknowledgements
+        {
+            get { return protocol.HasPendingMapPlanAcknowledgements; }
         }
 
         public byte[] GetConnectedPeerSlots()
@@ -214,6 +220,10 @@ namespace CrawlOnline
                 return;
             }
 
+            StackFrame callerFrame = new StackFrame(1, false);
+            System.Reflection.MethodBase caller = callerFrame.GetMethod();
+            log.LogInfo("Crawl Online lobby leave requested by " +
+                        (caller == null ? "unknown" : caller.DeclaringType.Name + "." + caller.Name) + ".");
             int memberCount = SteamMatchmaking.GetNumLobbyMembers(lobbyId);
             CSteamID self = SteamUser.GetSteamID();
             for (int i = 0; i < memberCount; i++)

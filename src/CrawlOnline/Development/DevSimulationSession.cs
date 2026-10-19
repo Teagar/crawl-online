@@ -35,6 +35,7 @@ namespace CrawlOnline.Development
         public bool IsAuthoritativeHost { get { return InLobby; } }
         public byte LocalSlot { get { return InLobby ? (byte)0 : byte.MaxValue; } }
         public ulong SessionNonce { get { return InLobby ? SimulationNonce : 0; } }
+        public bool HasPendingMapPlanAcknowledgements { get { return false; } }
 
         public void Host()
         {

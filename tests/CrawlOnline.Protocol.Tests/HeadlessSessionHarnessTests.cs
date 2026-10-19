@@ -210,6 +210,92 @@ public sealed class HeadlessSessionHarnessTests
         Assert.Equal(RunReportedScenario(777).ToString(), RunReportedScenario(777).ToString());
     }
 
+    [Theory]
+    [InlineData(9001u)]
+    [InlineData(9002u)]
+    [InlineData(9003u)]
+    public void LongRunningAdverseSessionRemainsBoundedAndRecovers(uint seed)
+    {
+        HeadlessSessionHarness harness = new HeadlessSessionHarness(seed, 0x12345678,
+            WindowsBuild, new SessionNetworkProfile
+            {
+                MinimumLatencyTicks = 1,
+                MaximumLatencyTicks = 7,
+                UnreliableLossPercent = 8,
+                UnreliableDuplicatePercent = 6,
+                UnreliableCorruptionPercent = 2,
+                BandwidthPacketsPerTick = 12
+            });
+        HeadlessSessionPeer[] peers =
+        {
+            harness.AddClient(2), harness.AddClient(3), harness.AddClient(4)
+        };
+        foreach (HeadlessSessionPeer peer in peers) Assert.True(harness.Connect(peer));
+        harness.Advance(32);
+        Assert.All(peers, peer => Assert.True(peer.IsAuthenticated));
+
+        for (uint tick = 1; tick <= 12000; tick++)
+        {
+            for (int index = 0; index < peers.Length; index++)
+            {
+                byte edge = tick % 97 == (uint)index ? (byte)(1 << index) : (byte)0;
+                Assert.True(harness.SendInput(peers[index], Input(tick, edge)));
+            }
+            if (tick % 3 == 0) Assert.True(harness.BroadcastSnapshot(Snapshot()));
+
+            if (tick == 4000 || tick == 8000)
+            {
+                HeadlessSessionPeer peer = peers[tick == 4000 ? 0 : 2];
+                harness.Drop(peer);
+                Assert.False(harness.SendInput(peer, Input(tick, 0)));
+                Assert.True(harness.Reconnect(peer));
+            }
+
+            harness.Advance(1);
+            Assert.InRange(harness.QueuedPacketCount, 0, 1024);
+        }
+
+        harness.Advance(128);
+        Assert.Equal(0, harness.QueuedPacketCount);
+        Assert.Equal(new byte[] { 1, 2, 3 }, harness.ConnectedSlots());
+        Assert.All(peers, peer => Assert.True(peer.IsAuthenticated));
+        Assert.True(harness.Host.InputCount > 500, harness.GetReport() +
+            " inputs=" + harness.Host.InputCount);
+        Assert.All(peers, peer => Assert.True(peer.SnapshotCount > 0,
+            harness.GetReport() + " snapshots=" + peer.SnapshotCount));
+
+        var clean = new SessionNetworkProfile();
+        foreach (HeadlessSessionPeer peer in peers)
+        {
+            foreach (SessionDelivery delivery in Enum.GetValues<SessionDelivery>())
+            {
+                harness.SetProfile(peer.Id, harness.Host.Id, delivery, clean);
+                harness.SetProfile(harness.Host.Id, peer.Id, delivery, clean);
+            }
+            harness.Drop(peer);
+            Assert.True(harness.Reconnect(peer));
+        }
+        harness.Advance(16);
+        Assert.All(peers, peer => Assert.True(peer.IsAuthenticated));
+
+        int inputCountBeforeRecovery = harness.Host.InputCount;
+        int[] snapshotsBeforeRecovery = Array.ConvertAll(peers, peer => peer.SnapshotCount);
+        for (uint tick = 12001; tick <= 12100; tick++)
+        {
+            foreach (HeadlessSessionPeer peer in peers)
+                Assert.True(harness.SendInput(peer, Input(tick, 0)));
+            Assert.True(harness.BroadcastSnapshot(Snapshot()));
+            harness.Advance(1);
+        }
+        harness.Advance(16);
+
+        Assert.Equal(inputCountBeforeRecovery + 300, harness.Host.InputCount);
+        for (int index = 0; index < peers.Length; index++)
+            Assert.Equal(snapshotsBeforeRecovery[index] + 100, peers[index].SnapshotCount);
+        Assert.Equal(0, harness.QueuedPacketCount);
+        Assert.Contains("seed=" + seed, harness.GetReport().ToString());
+    }
+
     private static HeadlessSessionHarness Harness(uint seed)
     {
         return new HeadlessSessionHarness(seed, 0x12345678, WindowsBuild,

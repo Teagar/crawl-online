@@ -5,14 +5,25 @@ namespace CrawlOnline.Protocol
     public static class AuthoritativeCodec
     {
         private const uint Magic = 0x434F4E4C;
-        private const int SnapshotHeaderSize = 86;
+        private const int SnapshotHeaderSize = 142;
         private const int PlayerSize = 28;
         private const int EnemySize = 40;
         private const int MaximumEnemies = 256;
+        private const int MaximumRoomArchetypes = 512;
+        private const int MaximumSpecialRoomArchetypes = 8;
+        private const int MaximumRoomCollisionDecisions = 512;
+        private const int MaximumRoomSelectionDecisions = 512;
+        private const int MaximumRoomLayoutStates = 64;
+        private const int RoomLayoutSize = 32;
         public const int SessionInputPacketSize = 30;
         public const int InputEventPacketSize = 25;
         public const int SnapshotAckPacketSize = 18;
-        public const int MaximumSnapshotPacketSize = SnapshotHeaderSize + PlayerSize * 4 + EnemySize * MaximumEnemies;
+        public const int MaximumSnapshotPacketSize = SnapshotHeaderSize +
+            (MaximumRoomArchetypes + MaximumSpecialRoomArchetypes) * 8 +
+            MaximumRoomCollisionDecisions * 17 +
+            MaximumRoomSelectionDecisions * 16 +
+            MaximumRoomLayoutStates * RoomLayoutSize +
+            PlayerSize * 4 + EnemySize * MaximumEnemies;
 
         public static byte[] EncodeInput(SessionInputFrame frame)
         {
@@ -81,11 +92,50 @@ namespace CrawlOnline.Protocol
                 throw new ArgumentOutOfRangeException("snapshot", "Snapshots support at most 256 active enemies.");
             if (snapshot.RandomStateWords == null || snapshot.RandomStateWords.Length != 4)
                 throw new ArgumentException("Snapshots require the four Unity random-state words.", "snapshot");
+            if (snapshot.GameStartRandomStateWords == null || snapshot.GameStartRandomStateWords.Length != 4)
+                throw new ArgumentException("Snapshots require the four game-start random-state words.", "snapshot");
+            if (snapshot.RoomContentRandomStateWords == null || snapshot.RoomContentRandomStateWords.Length != 4)
+                throw new ArgumentException("Snapshots require the four room-content random-state words.", "snapshot");
+            if (snapshot.RoomArchetypeHashes == null || snapshot.RoomArchetypeHashes.Length > MaximumRoomArchetypes)
+                throw new ArgumentOutOfRangeException("snapshot", "Snapshots support at most 512 room selections.");
+            for (int i = 0; i < snapshot.RoomArchetypeHashes.Length; i++)
+                if (snapshot.RoomArchetypeHashes[i] == 0)
+                    throw new ArgumentException("Room archetype hashes must be non-zero.", "snapshot");
+            if (snapshot.SpecialRoomArchetypeHashes == null ||
+                snapshot.SpecialRoomArchetypeHashes.Length > MaximumSpecialRoomArchetypes)
+                throw new ArgumentOutOfRangeException("snapshot", "Snapshots support at most 8 special rooms.");
+            for (int i = 0; i < snapshot.SpecialRoomArchetypeHashes.Length; i++)
+                if (snapshot.SpecialRoomArchetypeHashes[i] == 0)
+                    throw new ArgumentException("Special room archetype hashes must be non-zero.", "snapshot");
+            if (snapshot.RoomCollisionDecisions == null ||
+                snapshot.RoomCollisionDecisions.Length > MaximumRoomCollisionDecisions)
+                throw new ArgumentOutOfRangeException("snapshot", "Snapshots support at most 512 room collisions.");
+            for (int i = 0; i < snapshot.RoomCollisionDecisions.Length; i++)
+                if (snapshot.RoomCollisionDecisions[i].Key == 0 ||
+                    snapshot.RoomCollisionDecisions[i].ArchetypeHash == 0)
+                    throw new ArgumentException("Room collision hashes must be non-zero.", "snapshot");
+            if (snapshot.RoomSelectionDecisions == null ||
+                snapshot.RoomSelectionDecisions.Length > MaximumRoomSelectionDecisions)
+                throw new ArgumentOutOfRangeException("snapshot", "Snapshots support at most 512 keyed room selections.");
+            for (int i = 0; i < snapshot.RoomSelectionDecisions.Length; i++)
+                if (snapshot.RoomSelectionDecisions[i].Key == 0 ||
+                    snapshot.RoomSelectionDecisions[i].ArchetypeHash == 0)
+                    throw new ArgumentException("Keyed room selection hashes must be non-zero.", "snapshot");
+            if (snapshot.RoomLayout == null || snapshot.RoomLayout.Length > MaximumRoomLayoutStates)
+                throw new ArgumentOutOfRangeException("snapshot", "Snapshots support at most 64 room layouts.");
+            for (int i = 0; i < snapshot.RoomLayout.Length; i++)
+                if (snapshot.RoomLayout[i].ArchetypeHash == 0 || snapshot.RoomLayout[i].ConnectionHash == 0)
+                    throw new ArgumentException("Room layout hashes must be non-zero.", "snapshot");
             ValidatePlayerOrder(snapshot.Players);
             ValidateEnemyOrder(snapshot.Enemies);
 
             byte[] data = CreatePacket(PacketType.Snapshot,
-                SnapshotHeaderSize + snapshot.Players.Length * PlayerSize + snapshot.Enemies.Length * EnemySize);
+                SnapshotHeaderSize + (snapshot.RoomArchetypeHashes.Length +
+                snapshot.SpecialRoomArchetypeHashes.Length) * 8 +
+                snapshot.RoomCollisionDecisions.Length * 17 +
+                snapshot.RoomSelectionDecisions.Length * 16 +
+                snapshot.RoomLayout.Length * RoomLayoutSize +
+                snapshot.Players.Length * PlayerSize + snapshot.Enemies.Length * EnemySize);
             WriteUInt64(data, 6, snapshot.SessionNonce);
             WriteUInt32(data, 14, snapshot.Sequence);
             WriteUInt32(data, 18, snapshot.HostTick);
@@ -98,9 +148,55 @@ namespace CrawlOnline.Protocol
             WriteUInt32(data, 55, snapshot.TransitionGeneration);
             WriteUInt64(data, 59, snapshot.RandomStateHash);
             for (int i = 0; i < 4; i++) WriteUInt32(data, 67 + i * 4, snapshot.RandomStateWords[i]);
-            data[83] = (byte)snapshot.Players.Length;
-            WriteUInt16(data, 84, (ushort)snapshot.Enemies.Length);
+            WriteUInt32(data, 83, snapshot.GameStartGeneration);
+            for (int i = 0; i < 4; i++) WriteUInt32(data, 87 + i * 4, snapshot.GameStartRandomStateWords[i]);
+            WriteInt32(data, 103, snapshot.RoomIndex);
+            data[107] = (byte)snapshot.Players.Length;
+            WriteUInt16(data, 108, (ushort)snapshot.Enemies.Length);
+            WriteUInt16(data, 110, (ushort)snapshot.RoomArchetypeHashes.Length);
+            data[112] = (byte)snapshot.SpecialRoomArchetypeHashes.Length;
+            WriteUInt16(data, 113, (ushort)snapshot.RoomCollisionDecisions.Length);
+            data[115] = (byte)snapshot.RoomLayout.Length;
+            WriteUInt16(data, 116, (ushort)snapshot.RoomSelectionDecisions.Length);
+            WriteUInt32(data, 118, snapshot.RoomContentGeneration);
+            WriteInt32(data, 122, snapshot.RoomContentRoomIndex);
+            for (int i = 0; i < 4; i++) WriteUInt32(data, 126 + i * 4,
+                snapshot.RoomContentRandomStateWords[i]);
             int offset = SnapshotHeaderSize;
+            for (int i = 0; i < snapshot.RoomArchetypeHashes.Length; i++)
+            {
+                WriteUInt64(data, offset, snapshot.RoomArchetypeHashes[i]);
+                offset += 8;
+            }
+            for (int i = 0; i < snapshot.SpecialRoomArchetypeHashes.Length; i++)
+            {
+                WriteUInt64(data, offset, snapshot.SpecialRoomArchetypeHashes[i]);
+                offset += 8;
+            }
+            for (int i = 0; i < snapshot.RoomCollisionDecisions.Length; i++)
+            {
+                WriteUInt64(data, offset, snapshot.RoomCollisionDecisions[i].Key);
+                WriteUInt64(data, offset + 8, snapshot.RoomCollisionDecisions[i].ArchetypeHash);
+                data[offset + 16] = snapshot.RoomCollisionDecisions[i].Collided ? (byte)1 : (byte)0;
+                offset += 17;
+            }
+            for (int i = 0; i < snapshot.RoomSelectionDecisions.Length; i++)
+            {
+                WriteUInt64(data, offset, snapshot.RoomSelectionDecisions[i].Key);
+                WriteUInt64(data, offset + 8, snapshot.RoomSelectionDecisions[i].ArchetypeHash);
+                offset += 16;
+            }
+            for (int i = 0; i < snapshot.RoomLayout.Length; i++)
+            {
+                RoomLayoutState room = snapshot.RoomLayout[i];
+                WriteUInt64(data, offset, room.ArchetypeHash);
+                WriteUInt64(data, offset + 8, room.ConnectionHash);
+                WriteInt32(data, offset + 16, room.Depth);
+                WriteInt32(data, offset + 20, room.PositionX);
+                WriteInt32(data, offset + 24, room.PositionY);
+                WriteInt32(data, offset + 28, room.RotationZ);
+                offset += RoomLayoutSize;
+            }
             for (int i = 0; i < snapshot.Players.Length; i++)
             {
                 PlayerSnapshot player = snapshot.Players[i];
@@ -139,10 +235,23 @@ namespace CrawlOnline.Protocol
             snapshot = null;
             if (data == null || data.Length < SnapshotHeaderSize ||
                 !HasHeaderPrefix(data, PacketType.Snapshot)) return false;
-            int count = data[83];
-            int enemyCount = ReadUInt16(data, 84);
-            if (count > 4 || enemyCount > MaximumEnemies ||
-                data.Length != SnapshotHeaderSize + count * PlayerSize + enemyCount * EnemySize ||
+            int count = data[107];
+            int enemyCount = ReadUInt16(data, 108);
+            int roomCount = ReadUInt16(data, 110);
+            int specialRoomCount = data[112];
+            int collisionCount = ReadUInt16(data, 113);
+            int roomLayoutCount = data[115];
+            int keyedSelectionCount = ReadUInt16(data, 116);
+            if (count > 4 || enemyCount > MaximumEnemies || roomCount > MaximumRoomArchetypes ||
+                specialRoomCount > MaximumSpecialRoomArchetypes ||
+                collisionCount > MaximumRoomCollisionDecisions ||
+                roomLayoutCount > MaximumRoomLayoutStates ||
+                keyedSelectionCount > MaximumRoomSelectionDecisions ||
+                data.Length != SnapshotHeaderSize + (roomCount + specialRoomCount) * 8 +
+                    collisionCount * 17 +
+                    keyedSelectionCount * 16 +
+                    roomLayoutCount * RoomLayoutSize +
+                    count * PlayerSize + enemyCount * EnemySize ||
                 (data[38] & ~(byte)(WorldSnapshotFlags.GameInProgress | WorldSnapshotFlags.HasCurrentRoom)) != 0)
                 return false;
 
@@ -160,12 +269,79 @@ namespace CrawlOnline.Protocol
                 TransitionGeneration = ReadUInt32(data, 55),
                 RandomStateHash = ReadUInt64(data, 59),
                 RandomStateWords = new uint[4],
+                GameStartGeneration = ReadUInt32(data, 83),
+                GameStartRandomStateWords = new uint[4],
+                RoomContentGeneration = ReadUInt32(data, 118),
+                RoomContentRoomIndex = ReadInt32(data, 122),
+                RoomContentRandomStateWords = new uint[4],
+                RoomIndex = ReadInt32(data, 103),
+                RoomArchetypeHashes = new ulong[roomCount],
+                SpecialRoomArchetypeHashes = new ulong[specialRoomCount],
+                RoomCollisionDecisions = new RoomCollisionDecision[collisionCount],
+                RoomSelectionDecisions = new RoomSelectionDecision[keyedSelectionCount],
+                RoomLayout = new RoomLayoutState[roomLayoutCount],
                 Players = new PlayerSnapshot[count],
                 Enemies = new EnemySnapshot[enemyCount]
             };
             for (int i = 0; i < 4; i++) decoded.LastInputSequences[i] = ReadUInt32(data, 22 + i * 4);
             for (int i = 0; i < 4; i++) decoded.RandomStateWords[i] = ReadUInt32(data, 67 + i * 4);
+            for (int i = 0; i < 4; i++) decoded.GameStartRandomStateWords[i] = ReadUInt32(data, 87 + i * 4);
+            for (int i = 0; i < 4; i++) decoded.RoomContentRandomStateWords[i] = ReadUInt32(data, 126 + i * 4);
             int offset = SnapshotHeaderSize;
+            for (int i = 0; i < roomCount; i++)
+            {
+                decoded.RoomArchetypeHashes[i] = ReadUInt64(data, offset);
+                if (decoded.RoomArchetypeHashes[i] == 0) return false;
+                offset += 8;
+            }
+            for (int i = 0; i < specialRoomCount; i++)
+            {
+                decoded.SpecialRoomArchetypeHashes[i] = ReadUInt64(data, offset);
+                if (decoded.SpecialRoomArchetypeHashes[i] == 0) return false;
+                offset += 8;
+            }
+            for (int i = 0; i < collisionCount; i++)
+            {
+                ulong key = ReadUInt64(data, offset);
+                ulong archetypeHash = ReadUInt64(data, offset + 8);
+                byte collided = data[offset + 16];
+                if (key == 0 || archetypeHash == 0 || collided > 1) return false;
+                decoded.RoomCollisionDecisions[i] = new RoomCollisionDecision
+                {
+                    Key = key,
+                    ArchetypeHash = archetypeHash,
+                    Collided = collided != 0
+                };
+                offset += 17;
+            }
+            for (int i = 0; i < keyedSelectionCount; i++)
+            {
+                ulong key = ReadUInt64(data, offset);
+                ulong archetypeHash = ReadUInt64(data, offset + 8);
+                if (key == 0 || archetypeHash == 0) return false;
+                decoded.RoomSelectionDecisions[i] = new RoomSelectionDecision
+                {
+                    Key = key,
+                    ArchetypeHash = archetypeHash
+                };
+                offset += 16;
+            }
+            for (int i = 0; i < roomLayoutCount; i++)
+            {
+                ulong archetypeHash = ReadUInt64(data, offset);
+                ulong connectionHash = ReadUInt64(data, offset + 8);
+                if (archetypeHash == 0 || connectionHash == 0) return false;
+                decoded.RoomLayout[i] = new RoomLayoutState
+                {
+                    ArchetypeHash = archetypeHash,
+                    ConnectionHash = connectionHash,
+                    Depth = ReadInt32(data, offset + 16),
+                    PositionX = ReadInt32(data, offset + 20),
+                    PositionY = ReadInt32(data, offset + 24),
+                    RotationZ = ReadInt32(data, offset + 28)
+                };
+                offset += RoomLayoutSize;
+            }
             byte previousSlot = 0;
             int heroCount = 0;
             for (int i = 0; i < count; i++)

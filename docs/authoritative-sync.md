@@ -20,7 +20,9 @@ The fixed, versioned snapshot header includes:
 - host simulation tick, lifecycle flags, and last processed input sequence for each player slot;
 - level and canonical current-room position/depth;
 - transition generation;
-- canonical RNG-state hash and the four Unity RNG state words.
+- canonical RNG-state hash and the four Unity RNG state words;
+- bounded game-start and room-content RNG states;
+- bounded room-prefab, door/result, collision, and final-layout plans.
 
 Up to four player records are sorted by unique slot and include role/lifecycle
 flags, gameplay state, quantized position/velocity, and current/maximum health.
@@ -55,6 +57,12 @@ missing, extra, duplicate, or lifecycle-incompatible objects fail closed.
   is not reconciled as authoritative gameplay state.
 - Unknown transitions fail closed rather than mutating local game objects with
   incomplete state.
+- During initial map bootstrap, the host sends stable hashes rather than game
+  assets. The client resolves its own legitimate local prefabs, replays the
+  ordered candidate and door/result plans, validates collision decisions, and
+  finally requires an identical room graph, transforms, and layout fingerprint.
+  The host pauses simulation until the client acknowledges the fully applied
+  plan; compact snapshots omit an already acknowledged plan.
 - A room mismatch resolves the host's canonical room key against the client's
   generated map and invokes Crawl's own room-transition entry point once per
   transition generation. Correction waits for that transition to complete.
@@ -63,6 +71,9 @@ missing, extra, duplicate, or lifecycle-incompatible objects fail closed.
   in a match reloads the current game scene through `SystemMain.LoadLevel`,
   allowing Crawl's own level-load pipeline to advance state. Backward or
   multi-level jumps remain fail-closed.
+- When the authoritative host completes a floor, the client invokes Crawl's
+  local end-level flow once for that transition generation and clears stale
+  current-room references. Upgrade UI and assets remain entirely local.
 - Animation/gameplay-state mismatch does not block motion correction; direct
   private-state mutation is intentionally avoided.
 - Alive/dead corrections use Crawl's public `Health.Suicide` and

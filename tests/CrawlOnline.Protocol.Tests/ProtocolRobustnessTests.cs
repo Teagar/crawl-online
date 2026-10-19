@@ -63,13 +63,36 @@ public sealed class ProtocolRobustnessTests
         byte[] encoded = AuthoritativeCodec.EncodeSnapshot(EmptySnapshot());
 
         byte[] tooManyPlayers = (byte[])encoded.Clone();
-        tooManyPlayers[83] = 5;
+        tooManyPlayers[107] = 5;
         Assert.False(AuthoritativeCodec.TryDecodeSnapshot(tooManyPlayers, out _));
 
         byte[] tooManyEnemies = (byte[])encoded.Clone();
-        tooManyEnemies[84] = 1;
-        tooManyEnemies[85] = 1;
+        tooManyEnemies[108] = 1;
+        tooManyEnemies[109] = 1;
         Assert.False(AuthoritativeCodec.TryDecodeSnapshot(tooManyEnemies, out _));
+
+        byte[] tooManyRooms = (byte[])encoded.Clone();
+        tooManyRooms[110] = 1;
+        tooManyRooms[111] = 2;
+        Assert.False(AuthoritativeCodec.TryDecodeSnapshot(tooManyRooms, out _));
+
+        byte[] tooManySpecialRooms = (byte[])encoded.Clone();
+        tooManySpecialRooms[112] = 9;
+        Assert.False(AuthoritativeCodec.TryDecodeSnapshot(tooManySpecialRooms, out _));
+
+        byte[] tooManyCollisions = (byte[])encoded.Clone();
+        tooManyCollisions[113] = 1;
+        tooManyCollisions[114] = 2;
+        Assert.False(AuthoritativeCodec.TryDecodeSnapshot(tooManyCollisions, out _));
+
+        byte[] tooManyRoomLayouts = (byte[])encoded.Clone();
+        tooManyRoomLayouts[115] = 65;
+        Assert.False(AuthoritativeCodec.TryDecodeSnapshot(tooManyRoomLayouts, out _));
+
+        byte[] tooManyKeyedSelections = (byte[])encoded.Clone();
+        tooManyKeyedSelections[116] = 1;
+        tooManyKeyedSelections[117] = 2;
+        Assert.False(AuthoritativeCodec.TryDecodeSnapshot(tooManyKeyedSelections, out _));
 
         Assert.False(AuthoritativeCodec.TryDecodeSnapshot(encoded[..^1], out _));
         Assert.False(AuthoritativeCodec.TryDecodeSnapshot(AppendByte(encoded), out _));

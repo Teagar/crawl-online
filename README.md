@@ -5,8 +5,10 @@ Experimental online multiplayer mod for Powerhoof's **Crawl**.
 The goal is real netplay: every participant owns, runs, and renders their own copy of the game. Video streaming is not part of the architecture.
 
 > [!WARNING]
-> This project is an early compatibility and determinism prototype. It is not a playable release yet.
-> Installer packages verify files and are reversible, but do not validate multiplayer end to end.
+> This is an experimental playable build, not a finished release. Two legitimate
+> Steam accounts have connected and played through the first floor on one Linux
+> PC using Proton. A complete match, native Windows, separate computers/networks,
+> reconnect, and leave flows have not yet been validated.
 
 ## Confirmed game architecture
 
@@ -18,14 +20,14 @@ The goal is real netplay: every participant owns, runs, and renders their own co
 
 No proprietary game binaries or decompiled source are committed to this repository.
 
-## Planned player experience
+## Experimental player experience
 
 1. Install the same Crawl Online release against the Windows 1.0.1 depot, either
    on native Windows or on Linux through Proton.
 2. Start Crawl normally through Steam.
-3. The host presses `F8` to create a private lobby.
-4. The host presses `F7` to open the Steam invitation dialog.
-5. Friends accept and run their own local copies.
+3. Open **ONLINE** and choose **HOST GAME**.
+4. Choose **INVITE FRIENDS** to open Steam's invitation dialog.
+5. Friends accept the invitation, or use **ONLINE → JOIN FRIEND**.
 6. The mod synchronizes input and authoritative corrections over Steam relay.
 
 ## Online menu, HUD and diagnostic controls
@@ -50,7 +52,7 @@ cross-machine peer validation.
 
 ## Install a release
 
-See the short [installation guide](docs/installation.md) for verified install,
+See the step-by-step [installation guide](docs/installation.md) for verified install,
 update, uninstall, and diagnostics on Windows x86 and on Linux using the same
 Windows 1.0.1 depot through Proton. Native Linux 1.0.3 support is paused. Release
 packages contain only Crawl Online; the installer fetches the pinned x86 BepInEx

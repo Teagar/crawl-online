@@ -57,9 +57,13 @@ namespace CrawlOnline.Menu
                 var component = installedMenu as Component;
                 if (component != null && component.gameObject != null && component.gameObject.activeInHierarchy)
                     return;
+                bool mainMenuStillActive = menuMainType != null && FindActiveMenuMain() != null;
                 submenuOpen = false;
                 installedMenu = null;
-                if (backSelected != null) backSelected();
+                if (mainMenuStillActive && backSelected != null)
+                    backSelected();
+                else
+                    log.LogInfo("Native Online menu left the scene for gameplay; preserving the active session.");
             }
 
             if (menuMainType == null)

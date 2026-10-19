@@ -49,6 +49,10 @@ Deliver an installable Windows/Linux mod that supports internet host/join and a 
 - Unity RNG is global across gameplay and cosmetic systems; hash its canonically ordered full state and never reset it per frame.
 - Linux direct tests require Steam app IDs in the environment. Use disposable working directories, suppress Steam Cloud/achievement writes, and preserve logs before cleanup.
 - A clean trace-v2 recording exercised 19,380 frames, 36,574 inputs, and 517 checkpoints; replay compared 198 checkpoints through frame 6,240 and every exact/quantized hash diverged from frame 30 without a harness exception.
+- Two legitimate Steam accounts on one Linux PC (native Steam host plus isolated Flatpak Steam client) repeatedly authenticated and entered Crawl Windows 1.0.1 gameplay under Proton. This is useful diagnostic evidence but does not replace native Windows or separate-machine/network validation.
+- Procedural bootstrap now combines an authoritative prefab-candidate tape with an ordered door-index/result plan, keyed collision validation, local prefab lookup, and a final fail-closed room-layout identity gate. Repeated Proton runs produced identical host/client room counts and layout fingerprints, including 6-, 7-, and 8-room maps.
+- The host pauses simulation while a map-plan acknowledgement is pending and resumes only after the client applies the complete snapshot. Runtime evidence confirmed map convergence, remote input receipt, enemies, hero rotation, room transitions, first-floor completion, and both peers reaching the upgrade intermission.
+- End-of-level reconciliation invokes the legitimate local `SystemLevel.DebugEndLevel` flow only after the authoritative host has left the completed floor; no proprietary asset crosses the network. A complete match, subsequent-floor soak, reconnect/leave lifecycle, native Windows, and two-machine/two-network validation remain open gates.
 
 ## Reconciliation
 

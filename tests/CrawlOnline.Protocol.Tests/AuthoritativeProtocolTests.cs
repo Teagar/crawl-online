@@ -103,8 +103,27 @@ public sealed class AuthoritativeProtocolTests
         Assert.Equal(expected.Flags, actual.Flags);
         Assert.Equal(expected.Level, actual.Level);
         Assert.Equal(expected.RoomX, actual.RoomX);
+        Assert.Equal(expected.RoomIndex, actual.RoomIndex);
         Assert.Equal(expected.RandomStateHash, actual.RandomStateHash);
         Assert.Equal(expected.RandomStateWords, actual.RandomStateWords);
+        Assert.Equal(expected.GameStartGeneration, actual.GameStartGeneration);
+        Assert.Equal(expected.GameStartRandomStateWords, actual.GameStartRandomStateWords);
+        Assert.Equal(expected.RoomArchetypeHashes, actual.RoomArchetypeHashes);
+        Assert.Equal(expected.SpecialRoomArchetypeHashes, actual.SpecialRoomArchetypeHashes);
+        Assert.Equal(expected.RoomContentGeneration, actual.RoomContentGeneration);
+        Assert.Equal(expected.RoomContentRoomIndex, actual.RoomContentRoomIndex);
+        Assert.Equal(expected.RoomContentRandomStateWords, actual.RoomContentRandomStateWords);
+        Assert.Equal(expected.RoomCollisionDecisions.Length, actual.RoomCollisionDecisions.Length);
+        for (int i = 0; i < expected.RoomCollisionDecisions.Length; i++)
+        {
+            Assert.Equal(expected.RoomCollisionDecisions[i].Key, actual.RoomCollisionDecisions[i].Key);
+            Assert.Equal(expected.RoomCollisionDecisions[i].ArchetypeHash,
+                actual.RoomCollisionDecisions[i].ArchetypeHash);
+            Assert.Equal(expected.RoomCollisionDecisions[i].Collided,
+                actual.RoomCollisionDecisions[i].Collided);
+        }
+        Assert.Equal(expected.RoomLayout, actual.RoomLayout);
+        Assert.Equal(expected.RoomSelectionDecisions, actual.RoomSelectionDecisions);
         Assert.Equal(2, actual.Players.Length);
         Assert.Equal(expected.Players[0].PositionX, actual.Players[0].PositionX);
         Assert.Equal(expected.Players[0].Flags, actual.Players[0].Flags);
@@ -217,6 +236,23 @@ public sealed class AuthoritativeProtocolTests
     }
 
     [Fact]
+    public void SequenceWindowCanResetPeerStateForAuthenticatedReconnect()
+    {
+        var window = new SequenceWindow(77);
+        Assert.True(window.TryAcceptInput(Input(77, 500, 2)));
+        Assert.True(window.TryAcceptInputEvent(Input(77, 600, 2)));
+        Assert.True(window.TryAcceptSnapshot(Snapshot(700)));
+
+        window.ResetInput(2);
+        window.ResetSnapshots();
+
+        Assert.True(window.TryAcceptInput(Input(77, 1, 2)));
+        Assert.True(window.TryAcceptInputEvent(Input(77, 1, 2)));
+        Assert.True(window.TryAcceptSnapshot(Snapshot(1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => window.ResetInput(4));
+    }
+
+    [Fact]
     public void InputEventsHaveIndependentReliableSequenceWindow()
     {
         var window = new SequenceWindow(77);
@@ -320,9 +356,38 @@ public sealed class AuthoritativeProtocolTests
             RoomX = -12000,
             RoomY = 44000,
             RoomDepth = 5,
+            RoomIndex = 6,
             TransitionGeneration = 2,
             RandomStateHash = 0x8877665544332211UL,
-            RandomStateWords = new uint[] { 1, 2, uint.MaxValue, 4 }
+            RandomStateWords = new uint[] { 1, 2, uint.MaxValue, 4 },
+            GameStartGeneration = 7,
+            GameStartRandomStateWords = new uint[] { 9, 8, 7, 6 },
+            RoomArchetypeHashes = new ulong[] { 11, 22, 11 },
+            SpecialRoomArchetypeHashes = new ulong[] { 33, 44 },
+            RoomContentGeneration = 3,
+            RoomContentRoomIndex = 1,
+            RoomContentRandomStateWords = new uint[] { 31, 32, 33, 34 },
+            RoomCollisionDecisions = new[]
+            {
+                new RoomCollisionDecision { Key = 55, ArchetypeHash = 56, Collided = false },
+                new RoomCollisionDecision { Key = 66, ArchetypeHash = 67, Collided = true }
+            },
+            RoomSelectionDecisions = new[]
+            {
+                new RoomSelectionDecision { Key = 91, ArchetypeHash = 92 }
+            },
+            RoomLayout = new[]
+            {
+                new RoomLayoutState
+                {
+                    ArchetypeHash = 77,
+                    ConnectionHash = 88,
+                    Depth = 1,
+                    PositionX = 100,
+                    PositionY = -200,
+                    RotationZ = 900000
+                }
+            }
         };
     }
 }

@@ -15,6 +15,7 @@ namespace CrawlOnline.Online
         bool IsAuthoritativeHost { get; }
         byte LocalSlot { get; }
         ulong SessionNonce { get; }
+        bool HasPendingMapPlanAcknowledgements { get; }
         byte[] GetConnectedPeerSlots();
         SessionHudState GetHudState();
         void Host();

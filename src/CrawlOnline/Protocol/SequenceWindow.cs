@@ -48,6 +48,21 @@ namespace CrawlOnline.Protocol
             return true;
         }
 
+        public void ResetInput(byte slot)
+        {
+            if (slot > 3) throw new ArgumentOutOfRangeException("slot");
+            hasInput[slot] = false;
+            lastInput[slot] = 0;
+            hasInputEvent[slot] = false;
+            lastInputEvent[slot] = 0;
+        }
+
+        public void ResetSnapshots()
+        {
+            hasSnapshot = false;
+            lastSnapshot = 0;
+        }
+
         public static bool IsNewer(uint candidate, uint previous)
         {
             uint difference = unchecked(candidate - previous);
