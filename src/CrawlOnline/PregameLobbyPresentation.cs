@@ -25,6 +25,11 @@ namespace CrawlOnline
 
     public static class PregameLobbyPresentation
     {
+        public static bool ShouldYieldClientMenu(SessionHudState state)
+        {
+            return state != null && !state.IsHost && state.PregamePhase == PregamePhase.StartingGame;
+        }
+
         public static PregameLobbyPlan Create(SessionHudState state)
         {
             if (state == null) throw new ArgumentNullException("state");

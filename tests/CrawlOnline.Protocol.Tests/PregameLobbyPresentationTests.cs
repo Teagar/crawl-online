@@ -53,4 +53,23 @@ public sealed class PregameLobbyPresentationTests
         Assert.Contains("P2 CLIENT YOU  /  P3 EMPTY  /  P4 EMPTY", plan.Labels);
         Assert.Equal("LEAVE LOBBY", plan.Labels[plan.SelectedIndex]);
     }
+
+    [Fact]
+    public void OnlyClientStartingGameYieldsTheMenu()
+    {
+        var clientStarting = new SessionHudState(SessionHudStatus.Connected, false, 1,
+            new[] { true, true, false, false }, "starting", false, null,
+            PregamePhase.StartingGame);
+        var clientConfiguring = new SessionHudState(SessionHudStatus.Connected, false, 1,
+            new[] { true, true, false, false }, "configuring", false, null,
+            PregamePhase.ConfiguringPlayers);
+        var hostStarting = new SessionHudState(SessionHudStatus.Connected, true, 0,
+            new[] { true, true, false, false }, "starting", false, null,
+            PregamePhase.StartingGame);
+
+        Assert.True(PregameLobbyPresentation.ShouldYieldClientMenu(clientStarting));
+        Assert.False(PregameLobbyPresentation.ShouldYieldClientMenu(clientConfiguring));
+        Assert.False(PregameLobbyPresentation.ShouldYieldClientMenu(hostStarting));
+        Assert.False(PregameLobbyPresentation.ShouldYieldClientMenu(null));
+    }
 }

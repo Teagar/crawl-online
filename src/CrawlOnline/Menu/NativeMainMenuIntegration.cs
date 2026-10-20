@@ -271,6 +271,11 @@ namespace CrawlOnline.Menu
         public void ShowPregame(SessionHudState state)
         {
             if (!submenuOpen || installedMenu == null || state == null) return;
+            if (PregameLobbyPresentation.ShouldYieldClientMenu(state))
+            {
+                YieldClientMenuToGameplay();
+                return;
+            }
             PregameLobbyPlan plan = PregameLobbyPresentation.Create(state);
             if (string.Equals(pregameSignature, plan.Signature, StringComparison.Ordinal)) return;
             try
@@ -299,6 +304,22 @@ namespace CrawlOnline.Menu
                 WarnContractOnce("Pre-game lobby menu failed safely: " + DescribeException(exception) + ".");
                 if (cancelSelected != null) cancelSelected();
             }
+        }
+
+        private void YieldClientMenuToGameplay()
+        {
+            try { WriteRequiredField(installedMenu.GetType(), installedMenu, "m_active", false); }
+            catch (Exception exception)
+            {
+                WarnContractOnce("Client pre-game menu could not be deactivated cleanly: " +
+                    DescribeException(exception) + ".");
+            }
+            submenuOpen = false;
+            installedMenu = null;
+            menuOwner = null;
+            pregameSignature = null;
+            suppressInstallUntilMenuLeaves = true;
+            log.LogInfo("Native client pre-game lobby yielded to the authoritative game start.");
         }
 
         public void CloseSessionMenu()
