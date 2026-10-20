@@ -56,6 +56,7 @@ Deliver an installable Windows/Linux mod that supports internet host/join and a 
 - Procedural bootstrap now combines an authoritative prefab-candidate tape with an ordered door-index/result plan, keyed collision validation, local prefab lookup, and a final fail-closed room-layout identity gate. Repeated Proton runs produced identical host/client room counts and layout fingerprints, including 6-, 7-, and 8-room maps.
 - The host pauses simulation while a map-plan acknowledgement is pending and resumes only after the client applies the complete snapshot. Runtime evidence confirmed map convergence, remote input receipt, enemies, hero rotation, room transitions, first-floor completion, and both peers reaching the upgrade intermission.
 - End-of-level reconciliation invokes the legitimate local `SystemLevel.DebugEndLevel` flow only after the authoritative host has left the completed floor; no proprietary asset crosses the network. A complete match, subsequent-floor soak, reconnect/leave lifecycle, native Windows, and two-machine/two-network validation remain open gates.
+- A two-account Linux/Proton alpha.2 soak sustained active host/client gameplay, then exercised explicit client leave, process restart, authenticated reentry into the live floor, repeat map bootstrap/acknowledgement, and explicit host-left handling. Both test installations were subsequently restored to alpha.1 by their recorded plugin hashes; this remains diagnostic evidence and does not satisfy the native-Windows gate.
 
 ## Reconciliation
 
