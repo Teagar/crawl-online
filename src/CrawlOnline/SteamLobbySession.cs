@@ -20,6 +20,7 @@ namespace CrawlOnline
         private const string LobbyBuildKey = "crawl-online-build";
         private const string LobbyGameBuildKey = "crawl-online-game-build";
         private const string LobbyNonceKey = "crawl-online-session-nonce";
+        private const string LobbyMemberSlotKey = "crawl-online-slot";
         private readonly ManualLogSource log;
         private readonly GameBuildFingerprint gameBuild;
         private readonly string gameBuildMetadata;
@@ -40,6 +41,7 @@ namespace CrawlOnline
         private bool cancelPendingJoin;
         private bool joinPending;
         private long discoveryOperation;
+        private PregamePhase pregamePhase = PregamePhase.WaitingForHost;
 
         public event Action<SessionInputFrame> InputReceived;
         public event Action<SessionInputFrame> InputEventReceived;
@@ -102,25 +104,49 @@ namespace CrawlOnline
         public SessionHudState GetHudState()
         {
             bool[] slots = new bool[4];
+            string[] names = new string[4];
             bool isHost = IsAuthoritativeHost;
             int visibleLocalSlot = LocalSlot == byte.MaxValue ? -1 : LocalSlot;
             if (InLobby)
             {
                 slots[0] = true;
+                names[0] = PersonaName(ownerId);
                 if (isHost)
                 {
-                    byte[] peers = protocol.GetConnectedPeerSlots();
+                    ulong[] peers = protocol.GetConnectedPeerIds();
                     for (int i = 0; i < peers.Length; i++)
                     {
-                        if (peers[i] < slots.Length) slots[peers[i]] = true;
+                        byte peerSlot;
+                        if (protocol.TryGetPeerSlot(peers[i], out peerSlot) && peerSlot < slots.Length)
+                        {
+                            slots[peerSlot] = true;
+                            names[peerSlot] = PersonaName(new CSteamID(peers[i]));
+                        }
                     }
                 }
-                else if (visibleLocalSlot >= 0 && visibleLocalSlot < slots.Length)
+                else
                 {
-                    slots[visibleLocalSlot] = true;
+                    int memberCount = SteamMatchmaking.GetNumLobbyMembers(lobbyId);
+                    for (int i = 0; i < memberCount; i++)
+                    {
+                        CSteamID member = SteamMatchmaking.GetLobbyMemberByIndex(lobbyId, i);
+                        int memberSlot;
+                        if (member == ownerId) memberSlot = 0;
+                        else if (!int.TryParse(SteamMatchmaking.GetLobbyMemberData(
+                            lobbyId, member, LobbyMemberSlotKey), out memberSlot)) continue;
+                        if (memberSlot < 0 || memberSlot >= slots.Length) continue;
+                        slots[memberSlot] = true;
+                        names[memberSlot] = PersonaName(member);
+                    }
+                    if (visibleLocalSlot >= 0 && visibleLocalSlot < slots.Length)
+                    {
+                        slots[visibleLocalSlot] = true;
+                        names[visibleLocalSlot] = SteamFriends.GetPersonaName();
+                    }
                 }
             }
-            return new SessionHudState(hudStatus, isHost, visibleLocalSlot, slots, hudMessage);
+            return new SessionHudState(hudStatus, isHost, visibleLocalSlot, slots, hudMessage,
+                false, names, pregamePhase);
         }
 
         public void Host()
@@ -323,6 +349,7 @@ namespace CrawlOnline
             lobbyId = new CSteamID(result.m_ulSteamIDLobby);
             ownerId = SteamUser.GetSteamID();
             protocol.StartHost(ownerId.m_SteamID, CreateNonce(), 4);
+            SteamMatchmaking.SetLobbyMemberData(lobbyId, LobbyMemberSlotKey, "0");
             SteamMatchmaking.SetLobbyData(lobbyId, LobbyPacketProtocolKey, PacketCodec.ProtocolVersion.ToString(CultureInfo.InvariantCulture));
             SteamMatchmaking.SetLobbyData(lobbyId, LobbySessionProtocolKey, SessionProtocolVersion);
             SteamMatchmaking.SetLobbyData(lobbyId, LobbyBuildKey, CrawlOnlineRuntime.Version);
@@ -462,6 +489,8 @@ namespace CrawlOnline
             }
             else if (result == SessionPacketResult.LocalAuthenticated)
             {
+                SteamMatchmaking.SetLobbyMemberData(lobbyId, LobbyMemberSlotKey,
+                    LocalSlot.ToString(CultureInfo.InvariantCulture));
                 log.LogInfo("Host authenticated this peer as slot " + LocalSlot +
                             " with authoritative snapshots enabled.");
                 SetHudStatus(SessionHudStatus.Connected, "Connected to host.");
@@ -563,6 +592,7 @@ namespace CrawlOnline
             lobbyId = CSteamID.Nil;
             ownerId = CSteamID.Nil;
             protocol.Reset();
+            pregamePhase = PregamePhase.WaitingForHost;
             cancelPendingHost = false;
             cancelPendingJoin = false;
             joinPending = false;
@@ -604,6 +634,7 @@ namespace CrawlOnline
 
         private void ApplyPregameMessage(PregamePhase phase)
         {
+            pregamePhase = phase;
             if (phase == PregamePhase.ConfiguringPlayers)
                 SetHudStatus(SessionHudStatus.Connected, IsAuthoritativeHost
                     ? "Set up the players. Remote keyboards are live."
@@ -614,6 +645,14 @@ namespace CrawlOnline
                 SetHudStatus(SessionHudStatus.Connected, IsAuthoritativeHost
                     ? "Peer connected. Start the game when ready."
                     : "Connected. Waiting for the host to start.");
+        }
+
+        private static string PersonaName(CSteamID member)
+        {
+            if (member == CSteamID.Nil) return string.Empty;
+            return member == SteamUser.GetSteamID()
+                ? SteamFriends.GetPersonaName()
+                : SteamFriends.GetFriendPersonaName(member);
         }
 
         private static ulong CreateNonce()

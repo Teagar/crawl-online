@@ -18,6 +18,7 @@ namespace CrawlOnline.Menu
         private readonly Action backSelected;
         private readonly Action inviteSelected;
         private readonly Action cancelSelected;
+        private readonly Action gameStartSelected;
         private readonly Action refreshSelected;
         private readonly Action<int> friendSelected;
         private readonly Type menuMainType;
@@ -27,10 +28,16 @@ namespace CrawlOnline.Menu
         private MainMenuOnlineBridge bridge;
         private bool contractWarningLogged;
         private bool submenuOpen;
+        private string pregameSignature;
+        private float pregameFirstRowSize;
+        private float pregameSecondRowSize;
+        private GameObject menuOwner;
+        private bool startingGame;
+        private bool suppressInstallUntilMenuLeaves;
 
         public NativeMainMenuIntegration(ManualLogSource logSource, Func<bool> selectedCallback,
             Action hostCallback, Action joinCallback, Action backCallback, Action inviteCallback,
-            Action cancelCallback, Action refreshCallback, Action<int> friendCallback,
+            Action cancelCallback, Action gameStartCallback, Action refreshCallback, Action<int> friendCallback,
             bool localSimulationMode)
         {
             log = logSource;
@@ -40,6 +47,7 @@ namespace CrawlOnline.Menu
             backSelected = backCallback;
             inviteSelected = inviteCallback;
             cancelSelected = cancelCallback;
+            gameStartSelected = gameStartCallback;
             refreshSelected = refreshCallback;
             friendSelected = friendCallback;
             simulationMode = localSimulationMode;
@@ -48,9 +56,29 @@ namespace CrawlOnline.Menu
 
         public void Tick()
         {
+            if (submenuOpen && pregameSignature != null && installedMenu != null)
+            {
+                try
+                {
+                    SetRenderedItemCharacterSize(installedMenu, 0, pregameFirstRowSize);
+                    SetRenderedItemCharacterSize(installedMenu, 1, pregameSecondRowSize);
+                }
+                catch (Exception exception)
+                {
+                    pregameSignature = null;
+                    WarnContractOnce("Pre-game lobby text scaling failed safely: " +
+                        DescribeException(exception) + ".");
+                }
+            }
             framesUntilScan--;
             if (framesUntilScan > 0) return;
             framesUntilScan = ScanIntervalFrames;
+
+            if (suppressInstallUntilMenuLeaves)
+            {
+                if (menuMainType != null && FindActiveMenuMain() != null) return;
+                suppressInstallUntilMenuLeaves = false;
+            }
 
             if (submenuOpen)
             {
@@ -60,7 +88,13 @@ namespace CrawlOnline.Menu
                 bool mainMenuStillActive = menuMainType != null && FindActiveMenuMain() != null;
                 submenuOpen = false;
                 installedMenu = null;
-                if (mainMenuStillActive && backSelected != null)
+                if (startingGame)
+                {
+                    startingGame = false;
+                    suppressInstallUntilMenuLeaves = true;
+                    log.LogInfo("Native pre-game lobby yielded to the authoritative game start.");
+                }
+                else if (mainMenuStillActive && backSelected != null)
                     backSelected();
                 else
                     log.LogInfo("Native Online menu left the scene for gameplay; preserving the active session.");
@@ -193,7 +227,7 @@ namespace CrawlOnline.Menu
             MainMenuOnlineBridge existing = owner.GetComponent<MainMenuOnlineBridge>();
             bridge = existing == null ? owner.AddComponent<MainMenuOnlineBridge>() : existing;
             bridge.Initialise(OpenSubmenu, OnHostSelected, OnJoinSelected, CloseSubmenu,
-                OnInviteSelected, OnCancelSelected);
+                OnInviteSelected, OnCancelSelected, OnStartSelected);
             bridge.InitialiseJoin(OnRefreshSelected, OnFriendSelected);
             bridge.InitialiseFocusProbe(log);
         }
@@ -207,6 +241,7 @@ namespace CrawlOnline.Menu
                 GameObject owner = ReadRequiredField(installedMenu.GetType(), installedMenu, "m_owner") as GameObject;
                 if (data == null || data.Count < 2 || owner == null)
                     throw new InvalidOperationException("Main-menu template is unavailable");
+                menuOwner = owner;
                 RemoveAllRenderedItems(installedMenu);
                 InsertRenderedItem(installedMenu, 0, data[0],
                     simulationMode ? "DROP / RECONNECT" : "INVITE FRIENDS",
@@ -219,6 +254,49 @@ namespace CrawlOnline.Menu
             catch (Exception exception)
             {
                 WarnContractOnce("Host waiting menu failed safely: " + DescribeException(exception) + ".");
+                if (cancelSelected != null) cancelSelected();
+            }
+        }
+
+        private void OnStartSelected()
+        {
+            if (!submenuOpen || menuOwner == null) return;
+            startingGame = true;
+            pregameSignature = null;
+            log.LogInfo("Native pre-game lobby start selected.");
+            if (gameStartSelected != null) gameStartSelected();
+            menuOwner.SendMessage(NativeMenuContract.StartMessage, SendMessageOptions.DontRequireReceiver);
+        }
+
+        public void ShowPregame(SessionHudState state)
+        {
+            if (!submenuOpen || installedMenu == null || state == null) return;
+            PregameLobbyPlan plan = PregameLobbyPresentation.Create(state);
+            if (string.Equals(pregameSignature, plan.Signature, StringComparison.Ordinal)) return;
+            try
+            {
+                IList data = ReadRequiredField(installedMenu.GetType(), installedMenu, "m_itemsData") as IList;
+                GameObject owner = ReadRequiredField(installedMenu.GetType(), installedMenu, "m_owner") as GameObject;
+                if (data == null || data.Count < 2 || owner == null)
+                    throw new InvalidOperationException("Main-menu template is unavailable");
+                menuOwner = owner;
+                RemoveAllRenderedItems(installedMenu);
+                for (int i = 0; i < plan.Labels.Length; i++)
+                {
+                    InsertRenderedItem(installedMenu, i, data[Math.Min(i, 1)], plan.Labels[i],
+                        plan.Messages[i], owner, plan.Enabled[i]);
+                }
+                SetMenuActive(installedMenu);
+                pregameFirstRowSize = ScaleRenderedItem(installedMenu, 0, 0.6f);
+                pregameSecondRowSize = ScaleRenderedItem(installedMenu, 1, 0.6f);
+                SetSelectedItemAndObserve(installedMenu, plan.SelectedIndex, "pregame-lobby");
+                pregameSignature = plan.Signature;
+                log.LogInfo("Native pre-game lobby refreshed for " + state.ConnectedPlayerCount +
+                    " connected slot(s), phase " + state.PregamePhase + ".");
+            }
+            catch (Exception exception)
+            {
+                WarnContractOnce("Pre-game lobby menu failed safely: " + DescribeException(exception) + ".");
                 if (cancelSelected != null) cancelSelected();
             }
         }
@@ -337,6 +415,7 @@ namespace CrawlOnline.Menu
                     return;
                 }
                 submenuOpen = true;
+                pregameSignature = null;
                 log.LogInfo("Native Online submenu opened.");
             }
             catch (Exception exception)
@@ -386,6 +465,7 @@ namespace CrawlOnline.Menu
         {
             if (!submenuOpen) return;
             TryRestoreMainMenuWithOnlineFocus();
+            pregameSignature = null;
             if (!submenuOpen && backSelected != null) backSelected();
         }
 
@@ -467,10 +547,16 @@ namespace CrawlOnline.Menu
         private static void InsertRenderedItem(object menu, int index, object template, string text,
             string message, GameObject owner)
         {
+            InsertRenderedItem(menu, index, template, text, message, owner, true);
+        }
+
+        private static void InsertRenderedItem(object menu, int index, object template, string text,
+            string message, GameObject owner, bool enabled)
+        {
             object itemData = CloneItemData(template);
             if (text != null) WriteRequiredField(itemData.GetType(), itemData, "m_text", text);
             if (message != null) WriteRequiredField(itemData.GetType(), itemData, "m_message", message);
-            WriteRequiredField(itemData.GetType(), itemData, "m_enabled", true);
+            WriteRequiredField(itemData.GetType(), itemData, "m_enabled", enabled);
             WriteRequiredField(itemData.GetType(), itemData, "m_visible", true);
 
             MethodInfo insert = AccessTools.Method(menu.GetType(), "InsertItem",
@@ -482,6 +568,34 @@ namespace CrawlOnline.Menu
             if (items == null || index >= items.Count) throw new InvalidOperationException("Inserted item is absent");
             object inserted = items[index];
             WriteRequiredField(inserted.GetType(), inserted, "m_messageObject", owner);
+        }
+
+        private static float ScaleRenderedItem(object menu, int index, float scale)
+        {
+            TextMesh[] labels = GetRenderedItemLabels(menu, index);
+            float size = labels[0].characterSize * scale;
+            for (int i = 0; i < labels.Length; i++) labels[i].characterSize = size;
+            return size;
+        }
+
+        private static void SetRenderedItemCharacterSize(object menu, int index, float size)
+        {
+            TextMesh[] labels = GetRenderedItemLabels(menu, index);
+            for (int i = 0; i < labels.Length; i++) labels[i].characterSize = size;
+        }
+
+        private static TextMesh[] GetRenderedItemLabels(object menu, int index)
+        {
+            IList items = ReadRequiredField(menu.GetType(), menu, "m_items") as IList;
+            if (items == null || index < 0 || index >= items.Count)
+                throw new InvalidOperationException("Rendered menu item is unavailable for scaling");
+            Component component = items[index] as Component;
+            if (component == null)
+                throw new InvalidOperationException("Rendered menu item is not a Unity component");
+            TextMesh[] labels = component.GetComponentsInChildren<TextMesh>(true);
+            if (labels == null || labels.Length == 0)
+                throw new InvalidOperationException("Rendered menu item has no native text label");
+            return labels;
         }
 
         private static void SetSelectedItem(object menu, int index)

@@ -69,7 +69,11 @@ The host publishes a small reliable, sequenced and nonce-bound pre-game state:
 waiting, configuring players, or starting the synchronized game. It contains no
 Steam identity, lobby identifier, profile name, or game asset. The client keeps
 its local menu as a safe waiting surface, but its assigned keyboard remains live
-and the HUD tells the player when the host is configuring the remote slot. The
+and the lobby tells the player when the host is configuring the remote slot. For
+presentation only, each authenticated participant publishes its assigned slot
+through Steam lobby-member metadata; peers resolve the corresponding transient
+Steam profile name locally. Names never enter Crawl Online packets, logs, or
+saved state and are sanitized before rendering. The
 host materializes authenticated remote slots with Crawl's bot assignment and
 replaces their gameplay input at the existing `PlayerData` boundary.
 

@@ -16,10 +16,13 @@ source.
 
 ## States and privacy
 
-`SteamLobbySession.GetHudState()` projects transport state into an
-identity-free `SessionHudState`: status, host/client role, local slot when
-assigned, four connection flags, and an operator-facing message. Steam IDs,
-lobby IDs, nonces, and packet data are deliberately absent from this model.
+`SteamLobbySession.GetHudState()` projects transport state into a bounded
+`SessionHudState`: status, host/client role, local slot when assigned, four
+connection flags, pre-game phase, transient profile display names, and an
+operator-facing message. Steam IDs, lobby IDs, nonces, and packet data are
+deliberately absent from this model. Display names are sanitized to the native
+font's conservative uppercase glyph set, limited to 16 characters, never
+logged or persisted, and fall back to the numbered player slot.
 
 The contextual strip covers `creating`, `waiting`, `authenticating`,
 `connected`, and `error`/reconnect guidance. Offline state is silent outside
@@ -28,10 +31,13 @@ its assigned slot after acceptance. `F5` temporarily opens expanded diagnostic
 details; it is not a permanent gameplay panel. The UI does not make
 multiplayer authority claims or alter simulation.
 
-During pre-game setup, a client receives only an identity-free phase and sees
-that the host is configuring players, that its assigned local keyboard is live,
-or that the synchronized game is starting. The native setup screen is not
-mirrored and the client cannot start the authoritative transition.
+During pre-game setup, the native ONLINE submenu becomes a shared lobby view.
+It lists P1-P4 as host, connected, local (`YOU`), or empty and shows the current
+waiting, player-setup, or starting phase. The host gets `START GAME` only after
+an authenticated peer is present, plus invite and leave actions. Clients get a
+clear waiting instruction and can only leave; they cannot start the
+authoritative transition. These rows reuse the legitimate runtime's native menu
+items and font without shipping or copying game assets.
 
 ## Controls
 
@@ -50,8 +56,9 @@ only the explicit function-key shortcuts affect Crawl Online.
 
 ## Validation boundary
 
-Automated tests exercise the identity-free state projection, including host
-roster, pending-client, and offline cases. A real authenticated Steam smoke
+Automated tests exercise the bounded state projection and lobby presentation,
+including host/client phases, sanitized names, roster, pending-client, and
+offline cases. A real authenticated Steam smoke
 can cover menu/offline/host/leave on one identity; it cannot validate an actual
 peer handshake. Capture 960x540 and 1920x1080 screenshots during human smoke
 to confirm that the upper-left strip does not obscure central gameplay and

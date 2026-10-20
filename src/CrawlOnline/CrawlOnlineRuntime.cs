@@ -76,7 +76,8 @@ namespace CrawlOnline
             onlineFlow = new OnlineFlowStateMachine();
             nativeMenu = new NativeMainMenuIntegration(log, OnNativeOnlineSelected,
                 OnNativeHostSelected, OnNativeJoinSelected, OnNativeOnlineBack,
-                OnNativeInviteSelected, OnNativeMenuCancelSelected, OnNativeJoinRefresh,
+                OnNativeInviteSelected, OnNativeMenuCancelSelected, OnNativeGameStartSelected,
+                OnNativeJoinRefresh,
                 OnNativeFriendSelected, enableLocalSimulation);
             if (!enableLocalSimulation && SteamLobbyLaunchRequest.TryParse(
                 Environment.GetCommandLineArgs(), out pendingLaunchLobby))
@@ -293,6 +294,12 @@ namespace CrawlOnline
             OnNativeCancelSelected();
         }
 
+        private void OnNativeGameStartSelected()
+        {
+            if (session != null && session.IsAuthoritativeHost)
+                session.BroadcastPregameState(PregamePhase.ConfiguringPlayers);
+        }
+
         private void InstallPendingLaunchStartGuard()
         {
             try
@@ -425,7 +432,7 @@ namespace CrawlOnline
             {
                 OnlineFlowTransition transition = onlineFlow.DispatchAsync(
                     OnlineFlowCommand.LobbyCreated, onlineOperation, null);
-                if (transition.Accepted) nativeMenu.ShowHostWaiting();
+                if (transition.Accepted) nativeMenu.ShowPregame(state);
             }
             else if ((onlineFlow.State == OnlineFlowState.CreatingLobby ||
                       onlineFlow.State == OnlineFlowState.WaitingForPlayers ||
@@ -450,7 +457,7 @@ namespace CrawlOnline
                 {
                     OnlineFlowTransition authenticated = onlineFlow.DispatchAsync(
                         OnlineFlowCommand.Authenticated, onlineOperation, null);
-                    if (authenticated.Accepted) nativeMenu.ShowFriendConnected();
+                    if (authenticated.Accepted) nativeMenu.ShowPregame(state);
                 }
             }
             else if (onlineFlow.State == OnlineFlowState.Authenticating &&
@@ -458,7 +465,7 @@ namespace CrawlOnline
             {
                 OnlineFlowTransition authenticated = onlineFlow.DispatchAsync(
                     OnlineFlowCommand.Authenticated, onlineOperation, null);
-                if (authenticated.Accepted) nativeMenu.ShowFriendConnected();
+                if (authenticated.Accepted) nativeMenu.ShowPregame(state);
             }
             else if (onlineFlow.State == OnlineFlowState.Leaving &&
                      state.Status == SessionHudStatus.Offline)
@@ -473,7 +480,7 @@ namespace CrawlOnline
                 }
             }
             else if (onlineFlow.State == OnlineFlowState.WaitingForPlayers &&
-                     state.Status == SessionHudStatus.Offline)
+                      state.Status == SessionHudStatus.Offline)
             {
                 OnlineFlowTransition leave = onlineFlow.Dispatch(OnlineFlowCommand.Leave);
                 if (!leave.Accepted) return;
@@ -486,6 +493,13 @@ namespace CrawlOnline
                     if (onlineFlow.State == OnlineFlowState.OnlineMenu)
                         onlineFlow.Dispatch(OnlineFlowCommand.Back);
                 }
+            }
+            else if ((onlineFlow.State == OnlineFlowState.WaitingForPlayers ||
+                      onlineFlow.State == OnlineFlowState.Connected) &&
+                     (state.Status == SessionHudStatus.WaitingForPeers ||
+                      state.Status == SessionHudStatus.Connected))
+            {
+                nativeMenu.ShowPregame(state);
             }
         }
     }

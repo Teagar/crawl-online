@@ -14,6 +14,7 @@ namespace CrawlOnline.Menu
         private Action back;
         private Action invite;
         private Action cancel;
+        private Action start;
         private Action refresh;
         private Action<int> friend;
         private const string FocusProbeEnvironmentVariable = "CRAWL_ONLINE_MENU_FOCUS_PROBE";
@@ -25,7 +26,7 @@ namespace CrawlOnline.Menu
         private readonly HashSet<string> observedFocusContracts = new HashSet<string>(StringComparer.Ordinal);
 
         public void Initialise(Action selectedCallback, Action hostCallback, Action joinCallback,
-            Action backCallback, Action inviteCallback, Action cancelCallback)
+            Action backCallback, Action inviteCallback, Action cancelCallback, Action startCallback)
         {
             selected = selectedCallback;
             host = hostCallback;
@@ -33,6 +34,7 @@ namespace CrawlOnline.Menu
             back = backCallback;
             invite = inviteCallback;
             cancel = cancelCallback;
+            start = startCallback;
         }
 
         public void InitialiseFocusProbe(ManualLogSource logSource)
@@ -154,6 +156,11 @@ namespace CrawlOnline.Menu
         {
         }
 
+        public void MsgCrawlOnlineStart()
+        {
+            if (start != null) start();
+        }
+
         private void OnDestroy()
         {
             selected = null;
@@ -162,6 +169,7 @@ namespace CrawlOnline.Menu
             back = null;
             invite = null;
             cancel = null;
+            start = null;
             refresh = null;
             friend = null;
             log = null;
