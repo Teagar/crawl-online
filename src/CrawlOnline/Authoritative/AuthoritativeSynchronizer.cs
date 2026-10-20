@@ -82,6 +82,7 @@ namespace CrawlOnline.Authoritative
         private int clientKeyedRoomSelectionCount;
         private int clientRoomArchetypeIndex;
         private int clientSpecialRoomArchetypeIndex;
+        private bool clientSpecialRoomSelectedByFallback;
         private bool mapRandomStateReady;
         private int mapRandomScopeDepth;
         private int mapIteratorRandomScopeDepth;
@@ -179,6 +180,7 @@ namespace CrawlOnline.Authoritative
                 clientAuthoritativeRooms.Clear();
                 clientRoomArchetypeIndex = 0;
                 clientSpecialRoomArchetypeIndex = 0;
+                clientSpecialRoomSelectedByFallback = false;
                 clientKeyedRoomSelectionCount = 0;
                 activeMapIterator = null;
                 mapRandomStateReady = false;
@@ -514,10 +516,16 @@ namespace CrawlOnline.Authoritative
             {
                 if (synchronizer.clientRoomArchetypeIndex >= synchronizer.clientRoomArchetypeHashes.Length)
                 {
-                    synchronizer.RejectMismatch("room-selection-tape-exhausted");
-                    return;
+                    if (!RoomPlanBoundary.TryTakeSpecialFallback(
+                        synchronizer.clientSpecialRoomArchetypeHashes,
+                        ref synchronizer.clientSpecialRoomArchetypeIndex,
+                        ref synchronizer.clientSpecialRoomSelectedByFallback, out hash))
+                    {
+                        synchronizer.RejectMismatch("room-selection-tape-exhausted");
+                        return;
+                    }
                 }
-                hash = synchronizer.clientRoomArchetypeHashes[synchronizer.clientRoomArchetypeIndex++];
+                else hash = synchronizer.clientRoomArchetypeHashes[synchronizer.clientRoomArchetypeIndex++];
             }
             GameObject candidate;
             synchronizer.clientRoomPrefabs.TryGetValue(hash, out candidate);
@@ -742,6 +750,8 @@ namespace CrawlOnline.Authoritative
             }
             else
             {
+                if (RoomPlanBoundary.CompleteSpecialCoroutine(
+                    ref synchronizer.clientSpecialRoomSelectedByFallback)) return;
                 if (synchronizer.clientSpecialRoomArchetypeIndex >=
                     synchronizer.clientSpecialRoomArchetypeHashes.Length)
                 {
@@ -1273,6 +1283,7 @@ namespace CrawlOnline.Authoritative
                         if (!TryBuildRoomPrefabIndex(allRoomHashes)) return false;
                         clientRoomArchetypeIndex = 0;
                         clientSpecialRoomArchetypeIndex = 0;
+                        clientSpecialRoomSelectedByFallback = false;
                         clientKeyedRoomSelectionCount = 0;
                         mapLayoutTransitionApplied = false;
                         mapRandomStateWords = (uint[])snapshot.GameStartRandomStateWords.Clone();
@@ -1322,6 +1333,7 @@ namespace CrawlOnline.Authoritative
             if (hostHasRoom && snapshotHasMapPlan &&
                 (clientRoomArchetypeIndex != clientRoomArchetypeHashes.Length ||
                 clientSpecialRoomArchetypeIndex != clientSpecialRoomArchetypeHashes.Length ||
+                clientSpecialRoomSelectedByFallback ||
                 clientKeyedRoomSelectionCount != snapshot.RoomSelectionDecisions.Length))
                 return RejectMismatch("map-plan-consumption:selections=" + clientRoomArchetypeIndex + "/" +
                     clientRoomArchetypeHashes.Length + ":special=" + clientSpecialRoomArchetypeIndex + "/" +
