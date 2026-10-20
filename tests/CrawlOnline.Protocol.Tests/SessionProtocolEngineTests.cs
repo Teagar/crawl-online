@@ -29,6 +29,15 @@ public sealed class SessionProtocolEngineTests
         Assert.Equal((byte)1, client.LocalSlot);
         Assert.Equal(new byte[] { 1 }, host.GetConnectedPeerSlots());
 
+        SessionPregameState receivedPregame = new SessionPregameState();
+        client.PregameStateReceived += state => receivedPregame = state;
+        Assert.True(host.BroadcastPregameState(PregamePhase.ConfiguringPlayers));
+        SentPacket pregamePacket = hostTransport.Sent[1];
+        Assert.Equal(SessionDelivery.Reliable, pregamePacket.Delivery);
+        Assert.Equal(SessionPacketResult.PregameStateAccepted,
+            client.HandlePacket(100, pregamePacket.Data));
+        Assert.Equal(PregamePhase.ConfiguringPlayers, receivedPregame.Phase);
+
         SessionInputFrame receivedInput = new SessionInputFrame();
         host.InputReceived += input => receivedInput = input;
         Assert.True(client.SendLocalInput(new InputFrame
@@ -50,7 +59,7 @@ public sealed class SessionProtocolEngineTests
         WorldSnapshot receivedSnapshot = null;
         client.SnapshotReceived += snapshot => receivedSnapshot = snapshot;
         Assert.True(host.BroadcastSnapshot(Snapshot()));
-        SentPacket snapshotPacket = hostTransport.Sent[1];
+        SentPacket snapshotPacket = hostTransport.Sent[2];
         Assert.Equal(SessionDelivery.Unreliable, snapshotPacket.Delivery);
         Assert.Equal(SessionPacketResult.SnapshotAccepted,
             client.HandlePacket(100, snapshotPacket.Data));

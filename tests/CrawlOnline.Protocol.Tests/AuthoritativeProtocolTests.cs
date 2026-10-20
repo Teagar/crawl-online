@@ -209,6 +209,27 @@ public sealed class AuthoritativeProtocolTests
     }
 
     [Fact]
+    public void PregameStateRoundTripsAndRejectsUnknownPhase()
+    {
+        var expected = new SessionPregameState
+        {
+            SessionNonce = 77,
+            Sequence = 12,
+            Phase = PregamePhase.ConfiguringPlayers
+        };
+        byte[] encoded = AuthoritativeCodec.EncodePregameState(expected);
+
+        Assert.True(AuthoritativeCodec.TryDecodePregameState(encoded,
+            out SessionPregameState actual));
+        Assert.Equal(expected.SessionNonce, actual.SessionNonce);
+        Assert.Equal(expected.Sequence, actual.Sequence);
+        Assert.Equal(expected.Phase, actual.Phase);
+
+        encoded[18] = byte.MaxValue;
+        Assert.False(AuthoritativeCodec.TryDecodePregameState(encoded, out _));
+    }
+
+    [Fact]
     public void SequenceWindowRejectsWrongSessionDuplicateAndStalePackets()
     {
         var window = new SequenceWindow(77);
@@ -250,6 +271,27 @@ public sealed class AuthoritativeProtocolTests
         Assert.True(window.TryAcceptInputEvent(Input(77, 1, 2)));
         Assert.True(window.TryAcceptSnapshot(Snapshot(1)));
         Assert.Throws<ArgumentOutOfRangeException>(() => window.ResetInput(4));
+    }
+
+    [Fact]
+    public void PregameSequenceRejectsWrongSessionDuplicateAndStalePackets()
+    {
+        var window = new SequenceWindow(77);
+        var state = new SessionPregameState
+        {
+            SessionNonce = 77,
+            Sequence = 10,
+            Phase = PregamePhase.ConfiguringPlayers
+        };
+        Assert.True(window.TryAcceptPregameState(state));
+        Assert.False(window.TryAcceptPregameState(state));
+        state.Sequence = 9;
+        Assert.False(window.TryAcceptPregameState(state));
+        state.Sequence = 11;
+        Assert.True(window.TryAcceptPregameState(state));
+        state.SessionNonce = 88;
+        state.Sequence = 12;
+        Assert.False(window.TryAcceptPregameState(state));
     }
 
     [Fact]

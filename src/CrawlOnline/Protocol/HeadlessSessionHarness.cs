@@ -44,6 +44,8 @@ namespace CrawlOnline.Protocol
         internal int AcceptedInputs;
         internal int AcceptedInputEvents;
         internal int AcceptedSnapshots;
+        internal int AcceptedPregameStates;
+        internal PregamePhase LastPregamePhase;
 
         internal HeadlessSessionPeer(ulong id, InMemorySessionEndpoint endpoint,
             SessionProtocolEngine engine)
@@ -61,6 +63,8 @@ namespace CrawlOnline.Protocol
         public int InputCount { get { return AcceptedInputs; } }
         public int InputEventCount { get { return AcceptedInputEvents; } }
         public int SnapshotCount { get { return AcceptedSnapshots; } }
+        public int PregameStateCount { get { return AcceptedPregameStates; } }
+        public PregamePhase PregamePhase { get { return LastPregamePhase; } }
     }
 
     public sealed class HeadlessSessionHarness
@@ -156,6 +160,13 @@ namespace CrawlOnline.Protocol
             return queued;
         }
 
+        public bool BroadcastPregameState(PregamePhase phase)
+        {
+            bool queued = host.Engine.BroadcastPregameState(phase);
+            Record("pregame phase=" + phase + " queued=" + queued);
+            return queued;
+        }
+
         public bool AcknowledgeLatest(HeadlessSessionPeer peer, uint sequence)
         {
             EnsureClient(peer);
@@ -243,6 +254,11 @@ namespace CrawlOnline.Protocol
             engine.InputReceived += delegate { peer.AcceptedInputs++; };
             engine.InputEventReceived += delegate { peer.AcceptedInputEvents++; };
             engine.SnapshotReceived += delegate { peer.AcceptedSnapshots++; };
+            engine.PregameStateReceived += delegate(SessionPregameState state)
+            {
+                peer.AcceptedPregameStates++;
+                peer.LastPregamePhase = state.Phase;
+            };
             peers.Add(id, peer);
             return peer;
         }

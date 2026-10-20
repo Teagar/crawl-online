@@ -8,6 +8,7 @@ namespace CrawlOnline.Online
         event Action<SessionInputFrame> InputReceived;
         event Action<SessionInputFrame> InputEventReceived;
         event Action<WorldSnapshot> SnapshotReceived;
+        event Action<SessionPregameState> PregameStateReceived;
         event Action<long, ulong[]> FriendLobbiesDiscovered;
         event Action<ulong> LobbyJoinRequested;
 
@@ -28,6 +29,7 @@ namespace CrawlOnline.Online
         void Poll();
         bool SendLocalInput(InputFrame input);
         bool BroadcastSnapshot(WorldSnapshot snapshot);
+        bool BroadcastPregameState(PregamePhase phase);
         bool AcknowledgeSnapshot(uint sequence);
     }
 }

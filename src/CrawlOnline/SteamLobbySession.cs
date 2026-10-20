@@ -14,7 +14,7 @@ namespace CrawlOnline
     {
         private const int Channel = 7;
         private const int MaxPacketSize = 64 * 1024;
-        private const string SessionProtocolVersion = "15";
+        private const string SessionProtocolVersion = "16";
         private const string LobbyPacketProtocolKey = "crawl-online-protocol";
         private const string LobbySessionProtocolKey = "crawl-online-session-protocol";
         private const string LobbyBuildKey = "crawl-online-build";
@@ -44,6 +44,7 @@ namespace CrawlOnline
         public event Action<SessionInputFrame> InputReceived;
         public event Action<SessionInputFrame> InputEventReceived;
         public event Action<WorldSnapshot> SnapshotReceived;
+        public event Action<SessionPregameState> PregameStateReceived;
         public event Action<long, ulong[]> FriendLobbiesDiscovered;
         public event Action<ulong> LobbyJoinRequested;
 
@@ -57,6 +58,7 @@ namespace CrawlOnline
             protocol.InputReceived += OnInputReceived;
             protocol.InputEventReceived += OnInputEventReceived;
             protocol.SnapshotReceived += OnSnapshotReceived;
+            protocol.PregameStateReceived += OnPregameStateReceived;
             lobbyCreated = CallResult<LobbyCreated_t>.Create(OnLobbyCreated);
             lobbyEntered = CallResult<LobbyEnter_t>.Create(OnLobbyEntered);
             lobbyMatches = CallResult<LobbyMatchList_t>.Create(OnLobbyMatchList);
@@ -271,6 +273,13 @@ namespace CrawlOnline
         public bool BroadcastSnapshot(WorldSnapshot snapshot)
         {
             return IsAuthoritativeHost && protocol.BroadcastSnapshot(snapshot);
+        }
+
+        public bool BroadcastPregameState(PregamePhase phase)
+        {
+            if (!IsAuthoritativeHost) return false;
+            ApplyPregameMessage(phase);
+            return protocol.BroadcastPregameState(phase);
         }
 
         public bool AcknowledgeSnapshot(uint sequence)
@@ -584,6 +593,27 @@ namespace CrawlOnline
         {
             Action<WorldSnapshot> callback = SnapshotReceived;
             if (callback != null) callback(snapshot);
+        }
+
+        private void OnPregameStateReceived(SessionPregameState state)
+        {
+            ApplyPregameMessage(state.Phase);
+            Action<SessionPregameState> callback = PregameStateReceived;
+            if (callback != null) callback(state);
+        }
+
+        private void ApplyPregameMessage(PregamePhase phase)
+        {
+            if (phase == PregamePhase.ConfiguringPlayers)
+                SetHudStatus(SessionHudStatus.Connected, IsAuthoritativeHost
+                    ? "Set up the players. Remote keyboards are live."
+                    : "Host is setting up. Use your keyboard for slot " + LocalSlot + ".");
+            else if (phase == PregamePhase.StartingGame)
+                SetHudStatus(SessionHudStatus.Connected, "Starting the synchronized game…");
+            else
+                SetHudStatus(SessionHudStatus.Connected, IsAuthoritativeHost
+                    ? "Peer connected. Start the game when ready."
+                    : "Connected. Waiting for the host to start.");
         }
 
         private static ulong CreateNonce()

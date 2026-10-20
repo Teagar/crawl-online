@@ -33,7 +33,8 @@ namespace CrawlOnline.Protocol
         SnapshotAccepted = 7,
         AcknowledgementAccepted = 8,
         PeerDisconnected = 9,
-        EndSession = 10
+        EndSession = 10,
+        PregameStateAccepted = 11
     }
 
     public sealed class SessionProtocolEngine
@@ -57,12 +58,14 @@ namespace CrawlOnline.Protocol
         private uint localInputSequence;
         private uint localInputEventSequence;
         private uint snapshotSequence;
+        private uint pregameStateSequence;
         private byte requestedSlot = byte.MaxValue;
         private byte localSlot = byte.MaxValue;
 
         public event Action<SessionInputFrame> InputReceived;
         public event Action<SessionInputFrame> InputEventReceived;
         public event Action<WorldSnapshot> SnapshotReceived;
+        public event Action<SessionPregameState> PregameStateReceived;
 
         public SessionProtocolEngine(ISessionPacketTransport packetTransport,
             ISessionMembership sessionMembership, GameBuildFingerprint localGameBuild)
@@ -226,6 +229,24 @@ namespace CrawlOnline.Protocol
             return queued;
         }
 
+        public bool BroadcastPregameState(PregamePhase phase)
+        {
+            if (!IsHost || roster == null || !Enum.IsDefined(typeof(PregamePhase), phase)) return false;
+            pregameStateSequence = Next(pregameStateSequence);
+            var state = new SessionPregameState
+            {
+                SessionNonce = sessionNonce,
+                Sequence = pregameStateSequence,
+                Phase = phase
+            };
+            ulong[] peers = roster.GetConnectedPeerIds();
+            bool queued = true;
+            for (int i = 0; i < peers.Length; i++)
+                queued &= transport.Send(peers[i], AuthoritativeCodec.EncodePregameState(state),
+                    SessionDelivery.Reliable);
+            return queued;
+        }
+
         public bool AcknowledgeSnapshot(uint sequence)
         {
             if (!IsActive || IsHost || localSlot == byte.MaxValue || sequence == 0) return false;
@@ -328,6 +349,16 @@ namespace CrawlOnline.Protocol
                 if (callback != null) callback(snapshot);
                 return SessionPacketResult.SnapshotAccepted;
             }
+            if (type == PacketType.PregameState && senderId == hostId && !IsHost &&
+                localSlot != byte.MaxValue && receiveWindow != null)
+            {
+                SessionPregameState state;
+                if (!AuthoritativeCodec.TryDecodePregameState(packet, out state) ||
+                    !receiveWindow.TryAcceptPregameState(state)) return SessionPacketResult.Rejected;
+                Action<SessionPregameState> callback = PregameStateReceived;
+                if (callback != null) callback(state);
+                return SessionPacketResult.PregameStateAccepted;
+            }
             if (type == PacketType.SnapshotAck && IsHost && roster != null)
             {
                 SnapshotAcknowledgement acknowledgement;
@@ -390,6 +421,7 @@ namespace CrawlOnline.Protocol
             localInputSequence = 0;
             localInputEventSequence = 0;
             snapshotSequence = 0;
+            pregameStateSequence = 0;
             requestedSlot = byte.MaxValue;
             localSlot = byte.MaxValue;
             peerAcknowledgements.Clear();

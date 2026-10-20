@@ -94,6 +94,8 @@ namespace CrawlOnline.Authoritative
         private object hostRoomContentRoom;
         private bool hostBootstrapPaused;
         private float hostPreviousTimeScale = 1f;
+        private PregamePhase hostPregamePhase = PregamePhase.WaitingForHost;
+        private bool hostPregamePhaseSent;
 
         public AuthoritativeSynchronizer(IOnlineSession lobbySession, ManualLogSource logSource)
         {
@@ -199,6 +201,8 @@ namespace CrawlOnline.Authoritative
                 roomContentContractLogged = false;
                 lastHostEnemyCount = -1;
                 lastClientEnemyCount = -1;
+                hostPregamePhase = PregamePhase.WaitingForHost;
+                hostPregamePhaseSent = false;
                 Array.Clear(playerMaxHealthRequests, 0, playerMaxHealthRequests.Length);
                 enemyMaxHealthRequests.Clear();
                 return;
@@ -212,6 +216,7 @@ namespace CrawlOnline.Authoritative
                     ReportRuntimeError("host assignment", exception);
                     return;
                 }
+                UpdateHostPregameState();
                 if (tick % SnapshotIntervalFrames == 0)
                 {
                     try
@@ -318,6 +323,30 @@ namespace CrawlOnline.Authoritative
             synchronizer.mapRandomScopeEntries = 0;
             synchronizer.gameStartGeneration++;
             if (synchronizer.gameStartGeneration == 0) synchronizer.gameStartGeneration = 1;
+            synchronizer.SetHostPregamePhase(PregamePhase.ConfiguringPlayers, true);
+        }
+
+        private void UpdateHostPregameState()
+        {
+            byte[] peers = session.GetConnectedPeerSlots();
+            if (peers.Length == 0) return;
+            PregamePhase desired = gameStartGeneration == 0
+                ? PregamePhase.WaitingForHost
+                : hostRoomArchetypeHashes.Count == 0
+                    ? PregamePhase.ConfiguringPlayers
+                    : PregamePhase.StartingGame;
+            SetHostPregamePhase(desired, tick % 120 == 0);
+        }
+
+        private void SetHostPregamePhase(PregamePhase phase, bool repeat)
+        {
+            if (!session.IsAuthoritativeHost ||
+                (hostPregamePhaseSent && hostPregamePhase == phase && !repeat)) return;
+            bool changed = !hostPregamePhaseSent || hostPregamePhase != phase;
+            hostPregamePhase = phase;
+            hostPregamePhaseSent = true;
+            session.BroadcastPregameState(phase);
+            if (changed) log.LogInfo("PREGAME_PHASE " + phase);
         }
 
         private static void MapRandomScopePrefix(ref uint[] __state)

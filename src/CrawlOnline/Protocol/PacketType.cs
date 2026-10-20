@@ -11,6 +11,7 @@ namespace CrawlOnline.Protocol
         HelloRejected = 7,
         SessionInput = 8,
         SnapshotAck = 9,
-        InputEvent = 10
+        InputEvent = 10,
+        PregameState = 11
     }
 }

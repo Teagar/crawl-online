@@ -18,6 +18,7 @@ namespace CrawlOnline.Protocol
         public const int SessionInputPacketSize = 30;
         public const int InputEventPacketSize = 25;
         public const int SnapshotAckPacketSize = 18;
+        public const int PregameStatePacketSize = 19;
         public const int MaximumSnapshotPacketSize = SnapshotHeaderSize +
             (MaximumRoomArchetypes + MaximumSpecialRoomArchetypes) * 8 +
             MaximumRoomCollisionDecisions * 17 +
@@ -413,6 +414,25 @@ namespace CrawlOnline.Protocol
             acknowledgement.SessionNonce = ReadUInt64(data, 6);
             acknowledgement.Sequence = ReadUInt32(data, 14);
             return true;
+        }
+
+        public static byte[] EncodePregameState(SessionPregameState state)
+        {
+            byte[] data = CreatePacket(PacketType.PregameState, PregameStatePacketSize);
+            WriteUInt64(data, 6, state.SessionNonce);
+            WriteUInt32(data, 14, state.Sequence);
+            data[18] = (byte)state.Phase;
+            return data;
+        }
+
+        public static bool TryDecodePregameState(byte[] data, out SessionPregameState state)
+        {
+            state = new SessionPregameState();
+            if (!HasHeader(data, PacketType.PregameState, PregameStatePacketSize)) return false;
+            state.SessionNonce = ReadUInt64(data, 6);
+            state.Sequence = ReadUInt32(data, 14);
+            state.Phase = (PregamePhase)data[18];
+            return Enum.IsDefined(typeof(PregamePhase), state.Phase);
         }
 
         private static void ValidatePlayerOrder(PlayerSnapshot[] players)

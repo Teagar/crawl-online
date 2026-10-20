@@ -5,7 +5,7 @@ namespace CrawlOnline.Protocol
     public static class PacketCodec
     {
         private const uint Magic = 0x434F4E4C; // "CONL"
-        public const byte ProtocolVersion = 13;
+        public const byte ProtocolVersion = 14;
         public const int InputPacketSize = 18;
         public const int HelloPacketSize = 63;
         public const int AcceptedPacketSize = 64;

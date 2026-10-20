@@ -16,7 +16,7 @@ namespace CrawlOnline
 {
     public sealed class CrawlOnlineRuntime
     {
-        public const string Version = "0.2.0-alpha.1";
+        public const string Version = "0.2.0-alpha.2";
         private readonly ManualLogSource log;
         private IOnlineSession session;
         private DeterminismHarness harness;

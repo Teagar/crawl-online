@@ -12,6 +12,8 @@ namespace CrawlOnline.Protocol
         private readonly bool[] hasInputEvent = new bool[4];
         private uint lastSnapshot;
         private bool hasSnapshot;
+        private uint lastPregameState;
+        private bool hasPregameState;
 
         public SequenceWindow(ulong nonce)
         {
@@ -48,6 +50,15 @@ namespace CrawlOnline.Protocol
             return true;
         }
 
+        public bool TryAcceptPregameState(SessionPregameState state)
+        {
+            if (state.SessionNonce != sessionNonce || state.Sequence == 0 ||
+                (hasPregameState && !IsNewer(state.Sequence, lastPregameState))) return false;
+            lastPregameState = state.Sequence;
+            hasPregameState = true;
+            return true;
+        }
+
         public void ResetInput(byte slot)
         {
             if (slot > 3) throw new ArgumentOutOfRangeException("slot");
@@ -61,6 +72,8 @@ namespace CrawlOnline.Protocol
         {
             hasSnapshot = false;
             lastSnapshot = 0;
+            hasPregameState = false;
+            lastPregameState = 0;
         }
 
         public static bool IsNewer(uint candidate, uint previous)

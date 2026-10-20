@@ -48,6 +48,29 @@ public sealed class HeadlessSessionHarnessTests
     }
 
     [Fact]
+    public void PregamePhaseAndIndependentKeyboardFramesReachAssignedSlots()
+    {
+        HeadlessSessionHarness harness = Harness(1010);
+        HeadlessSessionPeer first = harness.AddClient(2);
+        HeadlessSessionPeer second = harness.AddClient(3);
+        Assert.True(harness.Connect(first));
+        Assert.True(harness.Connect(second));
+        harness.Advance(10);
+
+        Assert.True(harness.BroadcastPregameState(PregamePhase.ConfiguringPlayers));
+        Assert.True(harness.SendInput(first, new InputFrame { Tick = 20, MoveY = 1000 }));
+        Assert.True(harness.SendInput(second, new InputFrame { Tick = 20, MoveX = -1000 }));
+        harness.Advance(10);
+
+        Assert.Equal(PregamePhase.ConfiguringPlayers, first.PregamePhase);
+        Assert.Equal(PregamePhase.ConfiguringPlayers, second.PregamePhase);
+        Assert.Equal(1, first.PregameStateCount);
+        Assert.Equal(1, second.PregameStateCount);
+        Assert.Equal(2, harness.Host.InputCount);
+        Assert.Equal(new byte[] { 1, 2 }, harness.ConnectedSlots());
+    }
+
+    [Fact]
     public void FullLobbyInvalidBuildNonceAndIdentityFailClosed()
     {
         HeadlessSessionHarness harness = Harness(1002);

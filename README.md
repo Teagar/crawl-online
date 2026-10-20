@@ -28,12 +28,15 @@ No proprietary game binaries or decompiled source are committed to this reposito
 3. Open **ONLINE** and choose **HOST GAME**.
 4. Choose **INVITE FRIENDS** to open Steam's invitation dialog.
 5. Friends accept the invitation, or use **ONLINE → JOIN FRIEND**.
-6. The mod synchronizes input and authoritative corrections over Steam relay.
+6. The host starts and configures the game. The client's assigned local keyboard
+   is already live while its HUD reports the host's pre-game phase.
+7. The mod starts the client from the authoritative map plan, then synchronizes
+   input and corrective snapshots over Steam relay.
 
 ## Online menu, HUD and diagnostic controls
 
 Use the native **ONLINE** main-menu entry to host or join. Outside that menu,
-the passive lower-left status strip appears only for an active connection or a
+the passive upper-left status text appears only for an active connection or a
 recoverable error. It reports role, connected slots (slot 0 is the host),
 connection state, and errors without displaying Steam or lobby IDs. `F5` can
 temporarily expand diagnostic details; they are not shown permanently.

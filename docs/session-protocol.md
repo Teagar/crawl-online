@@ -63,6 +63,20 @@ and reliable press/release events. A disconnected peer cannot authorize either
 domain through its reserved slot until a newer authenticated hello reconnects
 it.
 
+## Pre-game coordination
+
+The host publishes a small reliable, sequenced and nonce-bound pre-game state:
+waiting, configuring players, or starting the synchronized game. It contains no
+Steam identity, lobby identifier, profile name, or game asset. The client keeps
+its local menu as a safe waiting surface, but its assigned keyboard remains live
+and the HUD tells the player when the host is configuring the remote slot. The
+host materializes authenticated remote slots with Crawl's bot assignment and
+replaces their gameplay input at the existing `PlayerData` boundary.
+
+The real game transition remains host-authoritative: clients do not independently
+advance from the waiting menu. They enter the game from the existing validated
+snapshot and map-plan path after the host completes setup.
+
 ## Runtime evidence
 
 Historical Linux-native evidence remains research only. The official 32-bit

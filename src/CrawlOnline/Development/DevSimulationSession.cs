@@ -28,6 +28,7 @@ namespace CrawlOnline.Development
         public event Action<SessionInputFrame> InputReceived;
         public event Action<SessionInputFrame> InputEventReceived;
         public event Action<WorldSnapshot> SnapshotReceived { add { } remove { } }
+        public event Action<SessionPregameState> PregameStateReceived { add { } remove { } }
         public event Action<long, ulong[]> FriendLobbiesDiscovered;
         public event Action<ulong> LobbyJoinRequested { add { } remove { } }
 
@@ -140,6 +141,7 @@ namespace CrawlOnline.Development
         {
             return InLobby && harness.BroadcastSnapshot(snapshot);
         }
+        public bool BroadcastPregameState(PregamePhase phase) { return InLobby; }
         public bool AcknowledgeSnapshot(uint sequence) { return false; }
 
         public void CancelHostOrLeave() { Leave(); }

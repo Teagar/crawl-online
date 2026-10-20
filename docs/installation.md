@@ -115,7 +115,7 @@ Crawl Windows v1.0.1 build. Participants should be Steam friends.
 1. Accept the Steam invitation. Steam should open Crawl and join automatically.
 2. Alternatively, start Crawl, choose **ONLINE → JOIN FRIEND**, and select the
    available friend's lobby.
-3. Wait for the lower-left status strip to report **CONNECTED** before gameplay.
+3. Wait for the upper-left status text to report **CONNECTED** before gameplay.
 
 Lobby shortcuts remain available: `F8` hosts, `F7` opens Steam invitations, `F9`
 leaves, and `F5` shows diagnostic details. Hosting and joining are intentionally

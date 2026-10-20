@@ -28,6 +28,20 @@ namespace CrawlOnline.Protocol
         public InputFrame Input;
     }
 
+    public enum PregamePhase : byte
+    {
+        WaitingForHost = 0,
+        ConfiguringPlayers = 1,
+        StartingGame = 2
+    }
+
+    public struct SessionPregameState
+    {
+        public ulong SessionNonce;
+        public uint Sequence;
+        public PregamePhase Phase;
+    }
+
     public struct PlayerSnapshot
     {
         public byte Slot;

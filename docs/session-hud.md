@@ -28,6 +28,11 @@ its assigned slot after acceptance. `F5` temporarily opens expanded diagnostic
 details; it is not a permanent gameplay panel. The UI does not make
 multiplayer authority claims or alter simulation.
 
+During pre-game setup, a client receives only an identity-free phase and sees
+that the host is configuring players, that its assigned local keyboard is live,
+or that the synchronized game is starting. The native setup screen is not
+mirrored and the client cannot start the authoritative transition.
+
 ## Controls
 
 - **F8:** host a friends-only lobby
