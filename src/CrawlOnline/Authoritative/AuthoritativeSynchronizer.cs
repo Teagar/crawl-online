@@ -306,24 +306,27 @@ namespace CrawlOnline.Authoritative
             synchronizer.configuredLocalSlot = byte.MaxValue;
             synchronizer.managedBotSlots.Clear();
             synchronizer.hasRequestedLevelComplete = false;
-            if (!synchronizer.session.IsAuthoritativeHost)
-                return;
-            synchronizer.gameStartRandomStateWords = StateHasher.CaptureRandomStateWords();
-            synchronizer.hostRoomArchetypeHashes.Clear();
-            synchronizer.hostSpecialRoomArchetypeHashes.Clear();
-            synchronizer.hostRoomCollisionDecisions.Clear();
-            synchronizer.hostRoomSelectionDecisions.Clear();
-            synchronizer.hostRoomContentRoom = null;
-            synchronizer.roomContentRandomStateWords = new uint[4];
-            synchronizer.mapIteratorRandomStates.Clear();
-            synchronizer.mapRandomStateWords = (uint[])synchronizer.gameStartRandomStateWords.Clone();
-            synchronizer.mapRandomStateReady = true;
-            synchronizer.mapRandomScopeDepth = 0;
-            synchronizer.mapIteratorRandomScopeDepth = 0;
-            synchronizer.mapRandomScopeEntries = 0;
-            synchronizer.gameStartGeneration++;
-            if (synchronizer.gameStartGeneration == 0) synchronizer.gameStartGeneration = 1;
-            synchronizer.SetHostPregamePhase(PregamePhase.ConfiguringPlayers, true);
+            synchronizer.PrepareHostGameStart();
+        }
+
+        internal void PrepareHostGameStart()
+        {
+            if (!session.InLobby || !session.IsAuthoritativeHost || gameStartGeneration != 0) return;
+            gameStartRandomStateWords = StateHasher.CaptureRandomStateWords();
+            hostRoomArchetypeHashes.Clear();
+            hostSpecialRoomArchetypeHashes.Clear();
+            hostRoomCollisionDecisions.Clear();
+            hostRoomSelectionDecisions.Clear();
+            hostRoomContentRoom = null;
+            roomContentRandomStateWords = new uint[4];
+            mapIteratorRandomStates.Clear();
+            mapRandomStateWords = (uint[])gameStartRandomStateWords.Clone();
+            mapRandomStateReady = true;
+            mapRandomScopeDepth = 0;
+            mapIteratorRandomScopeDepth = 0;
+            mapRandomScopeEntries = 0;
+            gameStartGeneration = 1;
+            SetHostPregamePhase(PregamePhase.ConfiguringPlayers, true);
         }
 
         private void UpdateHostPregameState()

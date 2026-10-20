@@ -297,7 +297,10 @@ namespace CrawlOnline
         private void OnNativeGameStartSelected()
         {
             if (session != null && session.IsAuthoritativeHost)
-                session.BroadcastPregameState(PregamePhase.ConfiguringPlayers);
+            {
+                if (synchronizer != null) synchronizer.PrepareHostGameStart();
+                else session.BroadcastPregameState(PregamePhase.ConfiguringPlayers);
+            }
         }
 
         private void InstallPendingLaunchStartGuard()
